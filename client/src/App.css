@@ -1,0 +1,486 @@
+/* Global */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+  color: #e94560;
+  margin-bottom: 20px;
+  font-size: 1.8rem;
+}
+
+.error {
+  background: #e94560;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.2rem;
+  color: #888;
+}
+
+/* Lobby */
+.lobby {
+  background: #16213e;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.lobby h2 { color: #e94560; margin-bottom: 16px; }
+.lobby h3 { margin-bottom: 12px; color: #ccc; }
+
+.players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.player-slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #0f3460;
+  border-radius: 8px;
+}
+
+.player-slot.empty { opacity: 0.5; }
+
+.player-name { font-weight: 600; }
+.you-tag { color: #e94560; font-size: 0.85rem; }
+
+.ready-status {
+  font-size: 0.85rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.ready-status.ready { background: #2ecc71; color: #000; }
+.ready-status.not-ready { background: #555; }
+
+.settings {
+  margin-bottom: 20px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.setting-row label {
+  min-width: 120px;
+  font-weight: 500;
+}
+
+.setting-row input[type="number"] {
+  width: 100px;
+  padding: 6px 10px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 1rem;
+}
+
+.computed-value {
+  color: #aaa;
+  font-style: italic;
+}
+
+.ready-button {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #2ecc71;
+  color: #000;
+  transition: background 0.2s;
+}
+
+.ready-button:hover { background: #27ae60; }
+.ready-button.unready { background: #e74c3c; color: #fff; }
+.ready-button.unready:hover { background: #c0392b; }
+.ready-button:disabled { background: #555; color: #888; cursor: not-allowed; }
+
+.waiting-message {
+  text-align: center;
+  margin-top: 12px;
+  color: #888;
+}
+
+/* Game */
+.game {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.player-area {
+  background: #16213e;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.marker {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dealer-marker { background: #f39c12; color: #000; }
+.bb-marker { background: #3498db; color: #fff; }
+
+.stack {
+  font-size: 0.95rem;
+  color: #2ecc71;
+  font-weight: 600;
+}
+
+.current-bet {
+  font-size: 0.9rem;
+  color: #f39c12;
+}
+
+.all-in-badge {
+  background: #e94560;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.disconnected-tag {
+  background: #e74c3c;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.cards {
+  display: flex;
+  gap: 8px;
+}
+
+.card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 70px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border: 2px solid #444;
+}
+
+.card.red {
+  background: #fff;
+  color: #e74c3c;
+}
+
+.card.black {
+  background: #fff;
+  color: #222;
+}
+
+.card-back {
+  background: #3498db;
+  color: #fff;
+  border-color: #2980b9;
+}
+
+/* Board */
+.board-area {
+  background: #0a4d2e;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  min-height: 140px;
+}
+
+.pot {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f1c40f;
+  margin-bottom: 4px;
+}
+
+.round-label {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.community-cards {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.turn-indicator {
+  font-size: 1rem;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.3);
+}
+
+.result-message {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #f1c40f;
+  padding: 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 6px;
+}
+
+.match-over {
+  margin-top: 12px;
+}
+
+.match-over h2 { color: #f1c40f; }
+.match-over p { margin: 8px 0; }
+
+/* Actions */
+.action-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #333;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.btn {
+  padding: 10px 20px;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-fold { background: #e74c3c; color: #fff; }
+.btn-fold:hover { background: #c0392b; }
+.btn-check { background: #2ecc71; color: #000; }
+.btn-check:hover { background: #27ae60; }
+.btn-call { background: #3498db; color: #fff; }
+.btn-call:hover { background: #2980b9; }
+.btn-raise { background: #f39c12; color: #000; }
+.btn-raise:hover { background: #e67e22; }
+.btn-reset { background: #9b59b6; color: #fff; padding: 10px 24px; }
+.btn-reset:hover { background: #8e44ad; }
+
+.raise-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.raise-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-preset {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  background: #2c3e6d;
+  color: #e0e0e0;
+}
+
+.btn-preset:hover {
+  background: #3d5a99;
+}
+
+.raise-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.raise-slider-row input[type="range"] {
+  flex: 1;
+  min-width: 120px;
+}
+
+.raise-slider-row input[type="number"] {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 1rem;
+}
+
+.all-in-tag {
+  color: #e94560;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* Action Log */
+.action-log {
+  background: #16213e;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.action-log h3 {
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.log-entries {
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 0.9rem;
+}
+
+.log-entry {
+  padding: 3px 0;
+  color: #bbb;
+}
+
+.log-entry.log-round {
+  color: #f39c12;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Secret button & avatar mode */
+.secret-area {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.btn-secret {
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  background: #333;
+  color: #666;
+  border: 1px solid #444;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.btn-secret:hover {
+  background: #444;
+  color: #999;
+}
+
+.secret-code-input {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.secret-code-input span {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.secret-code-input input {
+  width: 100px;
+  padding: 6px 10px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.avatar-mode-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: #9b59b6;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Avatar L/G buttons in lobby */
+.avatar-buttons {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.btn-avatar {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: #333;
+  color: #888;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-avatar:hover {
+  background: #444;
+  color: #ccc;
+}
+
+.btn-avatar.active {
+  background: #9b59b6;
+  color: #fff;
+  border-color: #9b59b6;
+}
+
+/* Avatar image in game */
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #9b59b6;
+}

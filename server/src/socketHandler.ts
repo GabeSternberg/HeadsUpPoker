@@ -3,14 +3,13 @@
  */
 
 import { Server, Socket } from 'socket.io';
-import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, PlayerState } from './gameState';
-
+import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, PlayerState, GameMode } from './gameState';
 
 export function setupSocketHandlers(io: Server): void {
-  // Single room for simplicity
   let room: Room = createRoom();
+
   function broadcastState(): void {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < room.players.length; i++) {
       const player = room.players[i];
       if (player && player.connected) {
         io.to(player.id).emit('gameState', getClientState(room, i));
@@ -22,15 +21,28 @@ export function setupSocketHandlers(io: Server): void {
     return room.players.findIndex(p => p && p.id === socketId);
   }
 
+  function connectedCount(): number {
+    return room.players.filter(p => p && p.connected).length;
+  }
+
   function startNextHand(): void {
-    // Check if match is over
     if (checkMatchOver(room)) {
       broadcastState();
       return;
     }
 
-    // Swap dealer
-    room.dealerIndex = 1 - room.dealerIndex;
+    // Advance dealer to next active seat
+    const activeSeats = room.players.map((p, i) => (p && p.stack > 0) ? i : -1).filter(i => i >= 0);
+    if (activeSeats.length < 2) {
+      broadcastState();
+      return;
+    }
+
+    // Move dealer clockwise
+    const sorted = [...activeSeats].sort((a, b) => a - b);
+    let nextDealer = sorted.find(s => s > room.dealerIndex);
+    if (nextDealer === undefined) nextDealer = sorted[0];
+    room.dealerIndex = nextDealer;
 
     startHand(room);
     broadcastState();
@@ -39,19 +51,37 @@ export function setupSocketHandlers(io: Server): void {
   io.on('connection', (socket: Socket) => {
     console.log(`Player connected: ${socket.id}`);
 
-    // Try to assign player to a slot
     let playerIndex = -1;
 
-    // Check if this is a reconnection (not implemented — keep simple)
-    for (let i = 0; i < 2; i++) {
-      if (room.players[i] === null) {
-        playerIndex = i;
-        break;
+    if (room.mode === 'headsup') {
+      // Heads-up: max 2 slots
+      for (let i = 0; i < 2; i++) {
+        if (room.players[i] === null) {
+          playerIndex = i;
+          break;
+        }
+        if (!room.players[i]!.connected) {
+          playerIndex = i;
+          break;
+        }
       }
-      // Allow reconnection to a disconnected slot
-      if (!room.players[i]!.connected) {
-        playerIndex = i;
-        break;
+    } else {
+      // Unlimited: find empty slot or add new
+      for (let i = 0; i < room.players.length; i++) {
+        if (room.players[i] === null) {
+          playerIndex = i;
+          break;
+        }
+        if (!room.players[i]!.connected && !room.gameStarted) {
+          playerIndex = i;
+          break;
+        }
+      }
+      if (playerIndex === -1 && !room.gameStarted) {
+        // Add new slot
+        playerIndex = room.players.length;
+        room.players.push(null);
+        room.avatarAssignment.push(null);
       }
     }
 
@@ -69,15 +99,43 @@ export function setupSocketHandlers(io: Server): void {
       connected: true,
       stack: isReconnect ? room.players[playerIndex]!.stack : room.settings.startingSum,
       holeCards: isReconnect ? room.players[playerIndex]!.holeCards : [],
-      currentBetThisRound: 0,
+      seatIndex: playerIndex,
     };
 
     socket.emit('assignPlayer', { index: playerIndex, name: `Player ${playerIndex + 1}` });
     broadcastState();
 
-    // Lobby: update settings
+    // Set game mode (only before game starts)
+    socket.on('setMode', (data: { mode: GameMode }) => {
+      if (room.gameStarted) return;
+      if (data.mode !== 'headsup' && data.mode !== 'unlimited') return;
+
+      room.mode = data.mode;
+
+      if (data.mode === 'headsup') {
+        // Trim to 2 slots
+        while (room.players.length > 2) {
+          const last = room.players.pop();
+          room.avatarAssignment.pop();
+          if (last && last.connected) {
+            io.to(last.id).emit('error', { message: 'Mode changed to 2-player' });
+            io.sockets.sockets.get(last.id)?.disconnect();
+          }
+        }
+        if (room.players.length < 2) {
+          while (room.players.length < 2) {
+            room.players.push(null);
+            room.avatarAssignment.push(null);
+          }
+        }
+      }
+
+      broadcastState();
+    });
+
+    // Update settings
     socket.on('updateSettings', (data: { startingSum?: number; bigBlind?: number }) => {
-      if (room.gameStarted) return; // settings locked during game
+      if (room.gameStarted) return;
 
       if (data.startingSum !== undefined) {
         const val = Math.floor(data.startingSum);
@@ -91,28 +149,28 @@ export function setupSocketHandlers(io: Server): void {
       broadcastState();
     });
 
-    // Lobby: toggle ready
+    // Toggle ready
     socket.on('toggleReady', () => {
       const idx = getPlayerIndex(socket.id);
       if (idx === -1 || room.gameStarted) return;
 
       room.players[idx]!.ready = !room.players[idx]!.ready;
 
-      // Check if both players are connected and ready
-      if (room.players[0]?.connected && room.players[0]?.ready &&
-          room.players[1]?.connected && room.players[1]?.ready) {
+      // Check if all connected players are ready (min 2)
+      const connected = room.players.filter(p => p && p.connected);
+      if (connected.length >= 2 && connected.every(p => p!.ready)) {
         room.gameStarted = true;
-        room.players[0]!.stack = room.settings.startingSum;
-        room.players[1]!.stack = room.settings.startingSum;
-        room.dealerIndex = 0; // first connected player starts as dealer/SB
-
+        for (const p of room.players) {
+          if (p) p.stack = room.settings.startingSum;
+        }
+        room.dealerIndex = 0;
         startHand(room);
       }
 
       broadcastState();
     });
 
-    // Game: player action
+    // Player action
     socket.on('action', (data: { type: string; amount?: number }) => {
       const idx = getPlayerIndex(socket.id);
       if (idx === -1) return;
@@ -136,36 +194,75 @@ export function setupSocketHandlers(io: Server): void {
       broadcastState();
     });
 
-    // Next hand (manual trigger after showdown/fold)
+    // Next hand (manual trigger)
     socket.on('nextHand', () => {
       if (!room.hand?.handOver) return;
       if (room.matchOver) return;
       startNextHand();
     });
 
-    // Avatar mode: activate
+    // Rebuy (unlimited mode only)
+    socket.on('rebuy', () => {
+      if (room.mode !== 'unlimited') return;
+      const idx = getPlayerIndex(socket.id);
+      if (idx === -1) return;
+      if (room.players[idx]!.stack > 0) return; // can only rebuy when busted
+
+      room.players[idx]!.stack = room.settings.startingSum;
+      broadcastState();
+    });
+
+    // Leave table (unlimited mode only)
+    socket.on('leaveTable', () => {
+      if (room.mode !== 'unlimited') return;
+      const idx = getPlayerIndex(socket.id);
+      if (idx === -1) return;
+
+      // If they're in a hand, fold them
+      if (room.hand && !room.hand.handOver && !room.hand.playerFolded[idx]) {
+        room.hand.playerFolded[idx] = true;
+        room.hand.playerActedThisRound[idx] = true;
+        // Check if hand should end
+        const nonFolded = room.hand.participants.filter(s => !room.hand!.playerFolded[s]);
+        if (nonFolded.length === 1) {
+          room.hand.handOver = true;
+          room.hand.winner = nonFolded[0];
+          room.hand.resultMessage = `${room.players[nonFolded[0]]!.name} wins the pot (${room.hand.pot})`;
+          room.players[nonFolded[0]]!.stack += room.hand.pot;
+          room.hand.pot = 0;
+          room.actionLog.push(room.hand.resultMessage);
+        }
+      }
+
+      room.players[idx] = null;
+      socket.emit('kicked', { message: 'You left the table' });
+      socket.disconnect();
+      broadcastState();
+    });
+
+    // Avatar mode
     socket.on('activateAvatarMode', () => {
       room.avatarMode = true;
       broadcastState();
     });
 
-    // Avatar mode: assign L or G to a player
     socket.on('setAvatarAssignment', (data: { playerIndex: number; role: 'L' | 'G' }) => {
       if (!room.avatarMode || room.gameStarted) return;
-      if (data.playerIndex !== 0 && data.playerIndex !== 1) return;
+      if (data.playerIndex < 0 || data.playerIndex >= room.players.length) return;
       if (data.role !== 'L' && data.role !== 'G') return;
 
       const otherRole = data.role === 'L' ? 'G' : 'L';
-      const otherIndex = 1 - data.playerIndex;
+      const otherIndex = data.playerIndex === 0 ? 1 : 0;
       room.avatarAssignment[data.playerIndex] = data.role;
-      room.avatarAssignment[otherIndex] = otherRole;
+      if (otherIndex < room.players.length) {
+        room.avatarAssignment[otherIndex] = otherRole;
+      }
       broadcastState();
     });
 
     // Reset match
     socket.on('resetMatch', () => {
       room = createRoom();
-      // Re-assign both connected sockets
       const sockets = Array.from(io.sockets.sockets.values());
       for (let i = 0; i < sockets.length && i < 2; i++) {
         room.players[i] = {
@@ -175,7 +272,7 @@ export function setupSocketHandlers(io: Server): void {
           connected: true,
           stack: room.settings.startingSum,
           holeCards: [],
-          currentBetThisRound: 0,
+          seatIndex: i,
         };
         sockets[i].emit('assignPlayer', { index: i, name: `Player ${i + 1}` });
       }
@@ -191,23 +288,59 @@ export function setupSocketHandlers(io: Server): void {
       room.players[idx]!.connected = false;
 
       if (room.gameStarted && room.hand && !room.hand.handOver) {
-        // Award pot to remaining player
-        const winner = 1 - idx;
-        if (room.players[winner]?.connected) {
-          room.hand.handOver = true;
-          room.hand.winner = winner;
-          room.hand.resultMessage = `${room.players[idx]!.name} disconnected. ${room.players[winner]!.name} wins.`;
-          room.players[winner]!.stack += room.hand.pot;
-          room.hand.pot = 0;
-          room.actionLog.push(room.hand.resultMessage);
-          room.matchOver = true;
-          broadcastState();
+        if (room.mode === 'headsup') {
+          const winner = 1 - idx;
+          if (room.players[winner]?.connected) {
+            room.hand.handOver = true;
+            room.hand.winner = winner;
+            room.hand.resultMessage = `${room.players[idx]!.name} disconnected. ${room.players[winner]!.name} wins.`;
+            room.players[winner]!.stack += room.hand.pot;
+            room.hand.pot = 0;
+            room.actionLog.push(room.hand.resultMessage);
+            room.matchOver = true;
+          }
+        } else {
+          // Unlimited: fold disconnected player
+          if (!room.hand.playerFolded[idx]) {
+            room.hand.playerFolded[idx] = true;
+            room.hand.playerActedThisRound[idx] = true;
+            room.actionLog.push(`${room.players[idx]!.name} disconnected and folds`);
+
+            const nonFolded = room.hand.participants.filter(s => !room.hand!.playerFolded[s]);
+            if (nonFolded.length === 1) {
+              room.hand.handOver = true;
+              room.hand.winner = nonFolded[0];
+              room.hand.resultMessage = `${room.players[nonFolded[0]]!.name} wins the pot (${room.hand.pot})`;
+              room.players[nonFolded[0]]!.stack += room.hand.pot;
+              room.hand.pot = 0;
+              room.actionLog.push(room.hand.resultMessage);
+            } else if (room.hand.currentPlayerIndex === idx) {
+              // It was their turn — advance
+              const active = room.hand.participants.filter(
+                s => !room.hand!.playerFolded[s] && !room.hand!.playerAllIn[s]
+              );
+              if (active.length > 0) {
+                // Find next active player after this one
+                const participants = room.hand.participants;
+                const myParIdx = participants.indexOf(idx);
+                for (let step = 1; step < participants.length; step++) {
+                  const nextIdx = (myParIdx + step) % participants.length;
+                  const seat = participants[nextIdx];
+                  if (!room.hand.playerFolded[seat] && !room.hand.playerAllIn[seat]) {
+                    room.hand.currentPlayerIndex = seat;
+                    break;
+                  }
+                }
+              }
+            }
+          }
         }
+        broadcastState();
       } else {
         broadcastState();
       }
 
-      // Clean up after a delay if they don't reconnect
+      // Clean up after delay
       setTimeout(() => {
         if (room.players[idx] && !room.players[idx]!.connected) {
           if (!room.gameStarted) {

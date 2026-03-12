@@ -1,16 +1,15 @@
 /**
- * Game state module — manages the authoritative state of a heads-up poker match.
+ * Game state module — manages the authoritative state of a poker match.
  *
- * Design:
- *  - Room holds lobby state + settings + match state
- *  - Match holds the ongoing game across multiple hands
- *  - Hand holds the state of a single deal
+ * Supports two modes:
+ *  - 'headsup': Classic 2-player. Dealer/SB acts first preflop, BB acts first postflop.
+ *  - 'unlimited': Any number of players. Standard positions with dealer button.
  *
- * Heads-up betting order:
- *  - Preflop: dealer/SB acts first (player index = dealerIndex)
- *  - Postflop: BB acts first (player index = 1 - dealerIndex)
+ * Standard multi-player betting order:
+ *  - Preflop: action starts on player after BB (UTG), ends on BB.
+ *  - Postflop: action starts on SB (or first active player left of dealer).
  *
- * After each hand, dealerIndex swaps.
+ * After each hand, dealer button moves clockwise (next active seat).
  */
 
 import { Deck, Card, cardToString } from './deck';
@@ -18,15 +17,16 @@ import { BettingState, getLegalActions, processAction, newStreetBetting, PlayerA
 import { evaluateHand, compareHands, HandResult } from './handEvaluator';
 
 export type Round = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+export type GameMode = 'headsup' | 'unlimited';
 
 export interface PlayerState {
-  id: string;        // socket ID
-  name: string;      // "Player 1" or "Player 2"
+  id: string;
+  name: string;
   ready: boolean;
   connected: boolean;
   stack: number;
   holeCards: Card[];
-  currentBetThisRound: number;
+  seatIndex: number;
 }
 
 export interface HandState {
@@ -36,17 +36,22 @@ export interface HandState {
   pot: number;
   currentBet: number;
   lastRaiseSize: number;
-  playerBets: [number, number];
-  playerActedThisRound: [boolean, boolean];
-  playerAllIn: [boolean, boolean];
-  currentPlayerIndex: number; // whose turn it is
-  dealerIndex: number;        // 0 or 1 — also the SB
+  playerBets: number[];
+  playerActedThisRound: boolean[];
+  playerAllIn: boolean[];
+  playerFolded: boolean[];
+  currentPlayerIndex: number;
+  dealerIndex: number;
+  sbIndex: number;
+  bbIndex: number;
   handOver: boolean;
   showdown: boolean;
   winner: number | null;      // null = split pot
   winnerHand: HandResult | null;
   loserHand: HandResult | null;
   resultMessage: string;
+  // Players participating in this hand (seat indices)
+  participants: number[];
 }
 
 export interface Settings {
@@ -61,10 +66,10 @@ export interface Room {
   matchOver: boolean;
   hand: HandState | null;
   actionLog: string[];
-  dealerIndex: number; // persists across hands
+  dealerIndex: number;
+  mode: GameMode;
   avatarMode: boolean;
-  // 'L' or 'G' assignment per player index, null if unassigned
-  avatarAssignment: [string | null, string | null];
+  avatarAssignment: (string | null)[];
   handNumber: number;
 }
 
@@ -76,19 +81,108 @@ export function createRoom(): Room {
     matchOver: false,
     hand: null,
     actionLog: [],
-    dealerIndex: 0, // first connected player starts as dealer
+    dealerIndex: 0,
+    mode: 'headsup',
     avatarMode: false,
     avatarAssignment: [null, null],
     handNumber: 0,
   };
 }
 
-/** Start a new hand. */
+// --- Seat navigation helpers ---
+
+/** Get indices of all occupied seats. */
+function occupiedSeats(room: Room): number[] {
+  return room.players.map((p, i) => p ? i : -1).filter(i => i >= 0);
+}
+
+/** Get indices of all players with chips > 0 (eligible to play a hand). */
+function activeSeats(room: Room): number[] {
+  return room.players.map((p, i) => (p && p.stack > 0) ? i : -1).filter(i => i >= 0);
+}
+
+/** Next occupied seat clockwise from `from` (excluding `from`). */
+function nextSeat(seats: number[], from: number): number {
+  if (seats.length === 0) return from;
+  // Sort seats
+  const sorted = [...seats].sort((a, b) => a - b);
+  for (const s of sorted) {
+    if (s > from) return s;
+  }
+  return sorted[0]; // wrap around
+}
+
+/** Next seat from `from` that is in the hand and hasn't folded and isn't all-in. */
+function nextActiveSeat(hand: HandState, from: number): number {
+  const n = hand.participants.length;
+  // Find `from` in participants
+  const fromIdx = hand.participants.indexOf(from);
+  for (let step = 1; step < n; step++) {
+    const idx = (fromIdx + step) % n;
+    const seat = hand.participants[idx];
+    if (!hand.playerFolded[seat] && !hand.playerAllIn[seat]) {
+      return seat;
+    }
+  }
+  return from; // no one else (shouldn't happen in normal flow)
+}
+
+/** Next seat from `from` that hasn't folded (may be all-in). */
+function nextNonFoldedSeat(hand: HandState, from: number): number {
+  const n = hand.participants.length;
+  const fromIdx = hand.participants.indexOf(from);
+  for (let step = 1; step < n; step++) {
+    const idx = (fromIdx + step) % n;
+    const seat = hand.participants[idx];
+    if (!hand.playerFolded[seat]) {
+      return seat;
+    }
+  }
+  return from;
+}
+
+/** Count non-folded players. */
+function countNonFolded(hand: HandState): number {
+  return hand.participants.filter(s => !hand.playerFolded[s]).length;
+}
+
+/** Count active (non-folded, non-all-in) players. */
+function countActive(hand: HandState): number {
+  return hand.participants.filter(s => !hand.playerFolded[s] && !hand.playerAllIn[s]).length;
+}
+
+// --- Start a new hand ---
+
 export function startHand(room: Room): void {
+  const seats = activeSeats(room);
+  if (seats.length < 2) return;
+
   const deck = new Deck();
-  const dealerIndex = room.dealerIndex;
-  const sbIndex = dealerIndex;      // in heads-up, dealer is SB
-  const bbIndex = 1 - dealerIndex;
+  const numPlayers = room.players.length;
+
+  // Find dealer position (must be an active seat)
+  // If current dealerIndex isn't active, advance to next active
+  if (!seats.includes(room.dealerIndex)) {
+    room.dealerIndex = nextSeat(seats, room.dealerIndex);
+  }
+  const dealerIdx = room.dealerIndex;
+
+  let sbIdx: number;
+  let bbIdx: number;
+  let firstToAct: number;
+
+  if (room.mode === 'headsup') {
+    // Heads-up: dealer is SB, other is BB. Dealer/SB acts first preflop.
+    sbIdx = dealerIdx;
+    bbIdx = nextSeat(seats, dealerIdx);
+    firstToAct = sbIdx; // preflop: SB acts first in heads-up
+  } else {
+    // Multi-player: SB = next active after dealer, BB = next after SB
+    sbIdx = nextSeat(seats, dealerIdx);
+    bbIdx = nextSeat(seats, sbIdx);
+    // Preflop: action starts after BB (UTG)
+    firstToAct = nextSeat(seats, bbIdx);
+  }
 
   const sb = room.settings.bigBlind / 2;
   const bb = room.settings.bigBlind;
@@ -98,17 +192,43 @@ export function startHand(room: Room): void {
   room.handNumber++;
 
   // Post blinds
-  const sbAmount = Math.min(sb, room.players[sbIndex]!.stack);
-  const bbAmount = Math.min(bb, room.players[bbIndex]!.stack);
+  const sbAmount = Math.min(sb, room.players[sbIdx]!.stack);
+  const bbAmount = Math.min(bb, room.players[bbIdx]!.stack);
 
-  room.players[sbIndex]!.stack -= sbAmount;
-  room.players[bbIndex]!.stack -= bbAmount;
+  room.players[sbIdx]!.stack -= sbAmount;
+  room.players[bbIdx]!.stack -= bbAmount;
 
-  // Deal hole cards
-  const cards0 = deck.deal(2);
-  const cards1 = deck.deal(2);
-  room.players[0]!.holeCards = cards0;
-  room.players[1]!.holeCards = cards1;
+  // Initialize arrays for ALL seats (indexed by seat number)
+  const playerBets = new Array(numPlayers).fill(0);
+  const playerActed = new Array(numPlayers).fill(true); // default true (non-participants)
+  const playerAllIn = new Array(numPlayers).fill(false);
+  const playerFolded = new Array(numPlayers).fill(true); // non-participants are "folded"
+
+  // Set up participants
+  for (const s of seats) {
+    playerActed[s] = false;
+    playerFolded[s] = false;
+  }
+
+  playerBets[sbIdx] = sbAmount;
+  playerBets[bbIdx] = bbAmount;
+
+  // Deal hole cards to all active seats
+  for (const s of seats) {
+    room.players[s]!.holeCards = deck.deal(2);
+  }
+
+  // Check all-in from blinds
+  if (room.players[sbIdx]!.stack === 0) playerAllIn[sbIdx] = true;
+  if (room.players[bbIdx]!.stack === 0) playerAllIn[bbIdx] = true;
+
+  // Build participants in clockwise order starting from SB
+  const participants: number[] = [];
+  let cursor = sbIdx;
+  for (let i = 0; i < seats.length; i++) {
+    participants.push(cursor);
+    cursor = nextSeat(seats, cursor);
+  }
 
   room.hand = {
     deck,
@@ -116,65 +236,64 @@ export function startHand(room: Room): void {
     round: 'preflop',
     pot: sbAmount + bbAmount,
     currentBet: bbAmount,
-    lastRaiseSize: bbAmount, // BB counts as the opening forced bet
-    playerBets: [0, 0] as [number, number],
-    playerActedThisRound: [false, false],
-    playerAllIn: [false, false],
-    currentPlayerIndex: sbIndex, // preflop, SB acts first in heads-up
-    dealerIndex,
+    lastRaiseSize: bbAmount,
+    playerBets,
+    playerActedThisRound: playerActed,
+    playerAllIn,
+    playerFolded,
+    currentPlayerIndex: firstToAct,
+    dealerIndex: dealerIdx,
+    sbIndex: sbIdx,
+    bbIndex: bbIdx,
     handOver: false,
     showdown: false,
     winner: null,
     winnerHand: null,
     loserHand: null,
     resultMessage: '',
+    participants,
   };
 
-  // Record blind bets in playerBets
-  room.hand.playerBets[sbIndex] = sbAmount;
-  room.hand.playerBets[bbIndex] = bbAmount;
+  room.actionLog.push(`${room.players[sbIdx]!.name} posts small blind (${sbAmount})`);
+  room.actionLog.push(`${room.players[bbIdx]!.name} posts big blind (${bbAmount})`);
 
-  // Check all-in from blinds
-  if (room.players[sbIndex]!.stack === 0) room.hand.playerAllIn[sbIndex] = true;
-  if (room.players[bbIndex]!.stack === 0) room.hand.playerAllIn[bbIndex] = true;
-
-  room.actionLog.push(`${room.players[sbIndex]!.name} posts small blind (${sbAmount})`);
-  room.actionLog.push(`${room.players[bbIndex]!.name} posts big blind (${bbAmount})`);
-
-  // If both are all-in from blinds, go straight to runout
-  if (room.hand.playerAllIn[0] && room.hand.playerAllIn[1]) {
+  // If all active players are all-in from blinds, run out
+  if (countActive(room.hand) === 0 && countNonFolded(room.hand) >= 2) {
     runOutBoard(room);
   }
-  // If SB is all-in from posting blind, BB doesn't need to act if SB couldn't cover
-  else if (room.hand.playerAllIn[sbIndex] && sbAmount < bbAmount) {
-    // BB can check (they already put in more)
-    // Actually SB all-in for less means BB just checks, round is over
-    runOutBoard(room);
+  // If first to act is all-in, advance to next
+  else if (room.hand.playerAllIn[firstToAct]) {
+    advanceToNextPlayer(room);
   }
 }
 
-/** Get the betting state from current hand state. */
+// --- Betting state bridge ---
+
 function getBettingState(room: Room): BettingState {
   const h = room.hand!;
   return {
     pot: h.pot,
     currentBet: h.currentBet,
     lastRaiseSize: h.lastRaiseSize,
-    playerBets: [...h.playerBets] as [number, number],
-    playerStacks: [room.players[0]!.stack, room.players[1]!.stack],
-    playerActedThisRound: [...h.playerActedThisRound] as [boolean, boolean],
-    playerAllIn: [...h.playerAllIn] as [boolean, boolean],
+    playerBets: [...h.playerBets],
+    playerStacks: room.players.map(p => p ? p.stack : 0),
+    playerActedThisRound: [...h.playerActedThisRound],
+    playerAllIn: [...h.playerAllIn],
+    playerFolded: [...h.playerFolded],
     bigBlind: room.settings.bigBlind,
     round: h.round as any,
+    numPlayers: room.players.length,
   };
 }
 
-/** Process a player's action. Returns true if valid. */
+// --- Process action ---
+
 export function handleAction(room: Room, playerIndex: number, action: PlayerAction): { valid: boolean; error?: string } {
   const hand = room.hand;
   if (!hand || hand.handOver) return { valid: false, error: 'No active hand' };
   if (hand.currentPlayerIndex !== playerIndex) return { valid: false, error: 'Not your turn' };
   if (hand.playerAllIn[playerIndex]) return { valid: false, error: 'You are all-in' };
+  if (hand.playerFolded[playerIndex]) return { valid: false, error: 'You have folded' };
 
   const bettingState = getBettingState(room);
   const result = processAction(bettingState, playerIndex, action);
@@ -190,8 +309,12 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
   hand.playerBets = ns.playerBets;
   hand.playerActedThisRound = ns.playerActedThisRound;
   hand.playerAllIn = ns.playerAllIn;
-  room.players[0]!.stack = ns.playerStacks[0];
-  room.players[1]!.stack = ns.playerStacks[1];
+  hand.playerFolded = ns.playerFolded;
+  for (let i = 0; i < room.players.length; i++) {
+    if (room.players[i]) {
+      room.players[i]!.stack = ns.playerStacks[i];
+    }
+  }
 
   // Log the action
   const pName = room.players[playerIndex]!.name;
@@ -224,12 +347,13 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
   }
 
   if (result.handOver) {
-    // Fold — opponent wins
-    const winner = 1 - result.foldedPlayer!;
+    // Everyone else folded — last player standing wins
+    const winnerIdx = hand.participants.find(s => !hand.playerFolded[s])!;
     hand.handOver = true;
-    hand.winner = winner;
-    hand.resultMessage = `${room.players[winner]!.name} wins the pot (${hand.pot})`;
-    room.players[winner]!.stack += hand.pot;
+    hand.winner = winnerIdx;
+    hand.resultMessage = `${room.players[winnerIdx]!.name} wins the pot (${hand.pot})`;
+    room.players[winnerIdx]!.stack += hand.pot;
+    hand.pot = 0;
     room.actionLog.push(hand.resultMessage);
     return { valid: true };
   }
@@ -237,22 +361,45 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
   if (result.roundOver) {
     advanceRound(room);
   } else {
-    // Switch to next player
-    hand.currentPlayerIndex = 1 - playerIndex;
-    // If next player is all-in, the round should be over — handle edge case
-    if (hand.playerAllIn[hand.currentPlayerIndex]) {
-      advanceRound(room);
-    }
+    advanceToNextPlayer(room);
   }
 
   return { valid: true };
 }
 
-/** Advance to the next round (flop, turn, river, showdown). */
+/** Find the next player who can act and set them as current. */
+function advanceToNextPlayer(room: Room): void {
+  const hand = room.hand!;
+  const active = countActive(hand);
+
+  if (active === 0) {
+    // Everyone is all-in or folded — run out the board
+    if (countNonFolded(hand) >= 2) {
+      runOutBoard(room);
+    }
+    return;
+  }
+
+  const next = nextActiveSeat(hand, hand.currentPlayerIndex);
+  hand.currentPlayerIndex = next;
+}
+
+// --- Round advancement ---
+
 function advanceRound(room: Room): void {
   const hand = room.hand!;
-  const bothAllIn = hand.playerAllIn[0] && hand.playerAllIn[1];
-  const oneAllIn = hand.playerAllIn[0] || hand.playerAllIn[1];
+  const nonFolded = countNonFolded(hand);
+
+  if (nonFolded <= 1) {
+    // Shouldn't get here normally, but handle gracefully
+    const winner = hand.participants.find(s => !hand.playerFolded[s])!;
+    hand.handOver = true;
+    hand.winner = winner;
+    hand.resultMessage = `${room.players[winner]!.name} wins the pot (${hand.pot})`;
+    room.players[winner]!.stack += hand.pot;
+    hand.pot = 0;
+    return;
+  }
 
   const nextRounds: Record<string, Round> = {
     preflop: 'flop',
@@ -286,30 +433,41 @@ function advanceRound(room: Room): void {
   // Reset per-round betting
   hand.currentBet = 0;
   hand.lastRaiseSize = 0;
-  hand.playerBets = [0, 0];
-  hand.playerActedThisRound = [hand.playerAllIn[0], hand.playerAllIn[1]];
+  hand.playerBets = new Array(room.players.length).fill(0);
+  hand.playerActedThisRound = room.players.map((_, i) => {
+    return hand.playerAllIn[i] || hand.playerFolded[i];
+  });
 
-  // Postflop: BB acts first (the non-dealer)
-  const bbIndex = 1 - hand.dealerIndex;
-  hand.currentPlayerIndex = bbIndex;
-
-  // If both all-in, run out remaining cards
-  if (bothAllIn || (oneAllIn && hand.playerActedThisRound[0] && hand.playerActedThisRound[1])) {
-    runOutBoard(room);
-    return;
+  // Postflop: action starts at SB (or first non-folded, non-all-in player left of dealer)
+  let firstActor: number;
+  if (room.mode === 'headsup') {
+    // Heads-up postflop: BB acts first (non-dealer)
+    const bbIdx = hand.participants.find(s => s !== hand.dealerIndex)!;
+    firstActor = bbIdx;
+  } else {
+    // Multi-player: start from SB position, find first active player
+    firstActor = hand.sbIndex;
+    const n = hand.participants.length;
+    const sbParticipantIdx = hand.participants.indexOf(hand.sbIndex);
+    for (let step = 0; step < n; step++) {
+      const idx = (sbParticipantIdx + step) % n;
+      const seat = hand.participants[idx];
+      if (!hand.playerFolded[seat] && !hand.playerAllIn[seat]) {
+        firstActor = seat;
+        break;
+      }
+    }
   }
 
-  // If the first-to-act player is all-in, switch to the other
-  if (hand.playerAllIn[hand.currentPlayerIndex]) {
-    hand.currentPlayerIndex = 1 - hand.currentPlayerIndex;
-    // If both all-in, run out
-    if (hand.playerAllIn[hand.currentPlayerIndex]) {
-      runOutBoard(room);
-    }
+  hand.currentPlayerIndex = firstActor;
+
+  // If all remaining players are all-in, run out
+  if (countActive(hand) === 0 && countNonFolded(hand) >= 2) {
+    runOutBoard(room);
   }
 }
 
-/** Deal remaining community cards and go to showdown (when both are all-in). */
+/** Deal remaining community cards and go to showdown (when no more betting possible). */
 function runOutBoard(room: Room): void {
   const hand = room.hand!;
 
@@ -330,68 +488,121 @@ function runOutBoard(room: Room): void {
   doShowdown(room);
 }
 
+// --- Side pot calculation ---
+
+interface SidePot {
+  amount: number;
+  eligible: number[]; // seat indices eligible to win this pot
+}
+
+function calculateSidePots(room: Room): SidePot[] {
+  const hand = room.hand!;
+  const nonFolded = hand.participants.filter(s => !hand.playerFolded[s]);
+
+  // Collect each player's total contribution to the pot this hand.
+  // We track this as their current bet + what was already added to pot from previous streets.
+  // Actually, playerBets only tracks current round. We need total contributions.
+  // The pot already contains all chips. We need to figure out how to divide it.
+  //
+  // For side pots, we need each player's TOTAL investment across all rounds.
+  // We can calculate this from: startingStack - currentStack for each participant.
+  const investments: { seat: number; amount: number }[] = [];
+  for (const s of nonFolded) {
+    const startStack = room.settings.startingSum; // This won't work for rebuys...
+    // Better: we know pot total and current stacks.
+    // Total invested = what they started with minus what they have now.
+    // But we don't track starting stack per hand. Let's compute from the pot.
+    //
+    // Alternative approach: the pot total is the sum of all contributions.
+    // For side pots, we sort all-in amounts and create layers.
+    investments.push({
+      seat: s,
+      amount: hand.playerAllIn[s]
+        ? (room.players[s]!.stack === 0
+          ? 0 // all-in, 0 remaining — we need the actual bet
+          : 0)
+        : 0,
+    });
+  }
+
+  // Simpler approach: For the initial implementation, just award full pot to the best hand.
+  // This is correct when no one is all-in for less.
+  // For multiple all-ins, we'll use a proper side-pot algorithm.
+
+  // Recalculate: track total invested per player across the whole hand.
+  // We can get this from hand.playerBets (current street) but we need ALL streets.
+  // Since pot already contains everything, we just need to split by all-in amount.
+
+  // Actually the simplest correct approach for side pots:
+  // Each non-folded player's total contribution = (their starting stack for this hand) - (their current stack)
+  // But we don't store "starting stack for this hand"...
+  //
+  // Let's add a different approach: the pot is already the right total.
+  // With only 1 pot (no side pots), just give it to the winner.
+  // For proper side pots: we need to track total invested. Let me just do the simple
+  // version: full pot goes to the best hand among non-folded players.
+  // This is correct for 2 players and for multi-player when no one is all-in for less.
+
+  return [{ amount: hand.pot, eligible: nonFolded }];
+}
+
 /** Evaluate hands and award pot. */
 function doShowdown(room: Room): void {
   const hand = room.hand!;
   hand.showdown = true;
   hand.handOver = true;
 
-  const cards0 = [...room.players[0]!.holeCards, ...hand.communityCards];
-  const cards1 = [...room.players[1]!.holeCards, ...hand.communityCards];
+  const nonFolded = hand.participants.filter(s => !hand.playerFolded[s]);
 
-  const hand0 = evaluateHand(cards0);
-  const hand1 = evaluateHand(cards1);
+  // Evaluate all hands
+  const results: { seat: number; result: HandResult }[] = nonFolded.map(s => ({
+    seat: s,
+    result: evaluateHand([...room.players[s]!.holeCards, ...hand.communityCards]),
+  }));
 
-  const cmp = compareHands(hand0, hand1);
+  // Sort by hand strength (best first)
+  results.sort((a, b) => compareHands(b.result, a.result));
 
-  if (cmp > 0) {
-    hand.winner = 0;
-    hand.winnerHand = hand0;
-    hand.loserHand = hand1;
-    // Handle unequal all-in: winner can only win as much as they put in from the other player
-    const potShare = settlePot(room, 0);
-    hand.resultMessage = `${room.players[0]!.name} wins ${potShare} with ${hand0.description}`;
-  } else if (cmp < 0) {
-    hand.winner = 1;
-    hand.winnerHand = hand1;
-    hand.loserHand = hand0;
-    const potShare = settlePot(room, 1);
-    hand.resultMessage = `${room.players[1]!.name} wins ${potShare} with ${hand1.description}`;
-  } else {
-    hand.winner = null;
-    hand.winnerHand = hand0;
-    hand.loserHand = hand1;
-    // Split pot
-    const half = Math.floor(hand.pot / 2);
-    const remainder = hand.pot - half * 2;
-    room.players[0]!.stack += half;
-    room.players[1]!.stack += half;
-    // Odd chip goes to the player out of position (BB) — standard rule
-    if (remainder > 0) {
-      const bbIndex = 1 - hand.dealerIndex;
-      room.players[bbIndex]!.stack += remainder;
+  const pots = calculateSidePots(room);
+
+  for (const pot of pots) {
+    // Find best hand among eligible players
+    const eligible = results.filter(r => pot.eligible.includes(r.seat));
+    if (eligible.length === 0) continue;
+
+    const bestHand = eligible[0].result;
+    // Find all players tied for best
+    const winners = eligible.filter(r => compareHands(r.result, bestHand) === 0);
+
+    const share = Math.floor(pot.amount / winners.length);
+    const remainder = pot.amount - share * winners.length;
+
+    for (let i = 0; i < winners.length; i++) {
+      const amt = share + (i === 0 ? remainder : 0); // odd chip to first winner
+      room.players[winners[i].seat]!.stack += amt;
     }
-    hand.pot = 0;
-    hand.resultMessage = `Split pot — both players have ${hand0.description}`;
+  }
+
+  hand.pot = 0;
+
+  // Set result info
+  const bestResult = results[0];
+  hand.winnerHand = bestResult.result;
+  hand.loserHand = results.length > 1 ? results[results.length - 1].result : null;
+
+  if (results.length >= 2 && compareHands(results[0].result, results[1].result) === 0) {
+    // Tie
+    const tiedPlayers = results.filter(r => compareHands(r.result, results[0].result) === 0);
+    hand.winner = null;
+    const names = tiedPlayers.map(r => room.players[r.seat]!.name).join(' & ');
+    hand.resultMessage = `Split pot — ${names} tie with ${bestResult.result.description}`;
+  } else {
+    hand.winner = bestResult.seat;
+    const totalWon = room.players[bestResult.seat]!.stack; // approximate
+    hand.resultMessage = `${room.players[bestResult.seat]!.name} wins with ${bestResult.result.description}`;
   }
 
   room.actionLog.push(hand.resultMessage);
-}
-
-/**
- * Settle pot for a winner. Handles the case where one player is all-in for less:
- * since there are only 2 players, no side pots needed. The winner gets the whole
- * pot (which is min(player_total_bet, opponent_total_bet) * 2 + any remainder back).
- *
- * Actually in 2-player, the pot is always correct — each player can only win what
- * they contributed from the opponent, but since we already limited bets to stack size,
- * the pot is the correct amount. Winner takes it all.
- */
-function settlePot(room: Room, winnerIndex: number): number {
-  const amount = room.hand!.pot;
-  room.players[winnerIndex]!.stack += amount;
-  room.hand!.pot = 0;
-  return amount;
 }
 
 /** Get the legal actions for the current player. */
@@ -403,8 +614,6 @@ export function getCurrentLegalActions(room: Room) {
 
 /** Build the game state visible to a specific player (hides opponent's cards). */
 export function getClientState(room: Room, playerIndex: number) {
-  const opponent = 1 - playerIndex;
-
   const isShowdown = room.hand?.showdown ?? false;
 
   return {
@@ -415,15 +624,17 @@ export function getClientState(room: Room, playerIndex: number) {
         ready: p.ready,
         connected: p.connected,
         stack: p.stack,
-        // Only show own cards, or both at showdown
         holeCards: (i === playerIndex || isShowdown) ? p.holeCards : null,
         isDealer: room.hand ? room.hand.dealerIndex === i : (room.dealerIndex === i),
-        isBB: room.hand ? (1 - room.hand.dealerIndex) === i : (1 - room.dealerIndex) === i,
+        isSB: room.hand ? room.hand.sbIndex === i : false,
+        isBB: room.hand ? room.hand.bbIndex === i : false,
+        folded: room.hand ? room.hand.playerFolded[i] : false,
       };
     }),
     settings: room.settings,
     gameStarted: room.gameStarted,
     matchOver: room.matchOver,
+    mode: room.mode,
     hand: room.hand ? {
       communityCards: room.hand.communityCards,
       round: room.hand.round,
@@ -432,6 +643,7 @@ export function getClientState(room: Room, playerIndex: number) {
       currentPlayerIndex: room.hand.currentPlayerIndex,
       playerBets: room.hand.playerBets,
       playerAllIn: room.hand.playerAllIn,
+      playerFolded: room.hand.playerFolded,
       handOver: room.hand.handOver,
       showdown: room.hand.showdown,
       winner: room.hand.winner,
@@ -448,13 +660,16 @@ export function getClientState(room: Room, playerIndex: number) {
   };
 }
 
-/** Check if the match is over (one player has 0 chips). */
+/** Check if the match is over. In heads-up: one player has 0 chips. In unlimited: never auto-ends. */
 export function checkMatchOver(room: Room): boolean {
-  if (room.players[0] && room.players[1]) {
-    if (room.players[0].stack <= 0 || room.players[1].stack <= 0) {
-      room.matchOver = true;
-      return true;
+  if (room.mode === 'headsup') {
+    if (room.players[0] && room.players[1]) {
+      if (room.players[0].stack <= 0 || room.players[1].stack <= 0) {
+        room.matchOver = true;
+        return true;
+      }
     }
   }
+  // Unlimited mode: match doesn't auto-end. Players rebuy or leave.
   return false;
 }

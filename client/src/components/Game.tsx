@@ -1,4 +1,4 @@
-import { GameState } from '../types';
+import { GameState, PlayerInfo } from '../types';
 import { CardDisplay, CardBack } from './Card';
 import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
@@ -9,6 +9,8 @@ interface GameProps {
   onAction: (type: string, amount?: number) => void;
   onResetMatch: () => void;
   onNextHand: () => void;
+  onRebuy: () => void;
+  onLeave: () => void;
   avatarFiles: { L: string[]; G: string[] };
 }
 
@@ -25,47 +27,87 @@ function getAvatarUrl(
   const files = role === 'L' ? avatarFiles.L : avatarFiles.G;
   if (files.length === 0) return null;
 
-  // Cycle through avatars based on hand number (1-indexed, so subtract 1)
   const idx = (gameState.handNumber - 1) % files.length;
   return `/${folder}/${files[idx < 0 ? 0 : idx]}`;
 }
 
-export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, avatarFiles }: GameProps) {
-  const opponentIndex = 1 - myIndex;
-  const me = gameState.players[myIndex];
-  const opponent = gameState.players[opponentIndex];
-  const hand = gameState.hand;
+function PlayerArea({
+  player,
+  index,
+  isMe,
+  hand,
+  gameState,
+  avatarFiles,
+}: {
+  player: PlayerInfo;
+  index: number;
+  isMe: boolean;
+  hand: GameState['hand'];
+  gameState: GameState;
+  avatarFiles: { L: string[]; G: string[] };
+}) {
+  const avatar = getAvatarUrl(index, gameState, avatarFiles);
+  const isFolded = hand?.playerFolded[index];
+  const isCurrentTurn = hand && !hand.handOver && hand.currentPlayerIndex === index;
 
+  return (
+    <div className={`player-area ${isMe ? 'my-area' : 'opponent-area'} ${isFolded ? 'folded' : ''} ${isCurrentTurn ? 'active-turn' : ''}`}>
+      <div className="player-info">
+        {avatar && <img className="avatar" src={avatar} alt="avatar" />}
+        <span className="player-name">{player.name}{isMe ? ' (You)' : ''}</span>
+        {!player.connected && <span className="disconnected-tag">DISCONNECTED</span>}
+        {hand && player.isDealer && <span className="marker dealer-marker">D</span>}
+        {hand && player.isSB && <span className="marker sb-marker">SB</span>}
+        {hand && player.isBB && <span className="marker bb-marker">BB</span>}
+        <span className="stack">Chips: {player.stack}</span>
+        {hand && hand.playerAllIn[index] && <span className="all-in-badge">ALL IN</span>}
+        {isFolded && <span className="folded-badge">FOLDED</span>}
+      </div>
+      {hand && hand.playerBets[index] > 0 && (
+        <div className="bet-badge">Bet: {hand.playerBets[index]}</div>
+      )}
+      <div className="cards">
+        {player.holeCards ? (
+          player.holeCards.map((card, i) => <CardDisplay key={i} card={card} />)
+        ) : (
+          hand && !hand.handOver && !isFolded ? (
+            <><CardBack /><CardBack /></>
+          ) : null
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, avatarFiles }: GameProps) {
+  const me = gameState.players[myIndex];
+  const hand = gameState.hand;
   const isMyTurn = hand && !hand.handOver && hand.currentPlayerIndex === myIndex;
 
-  const opponentAvatar = getAvatarUrl(opponentIndex, gameState, avatarFiles);
-  const myAvatar = getAvatarUrl(myIndex, gameState, avatarFiles);
+  // Separate opponents from me
+  const opponents = gameState.players
+    .map((p, i) => ({ player: p, index: i }))
+    .filter(({ index }) => index !== myIndex && gameState.players[index] !== null);
+
+  const isBusted = me && me.stack <= 0 && hand?.handOver;
 
   return (
     <div className="game">
-      {/* Opponent area (top) */}
-      <div className="player-area opponent-area">
-        <div className="player-info">
-          {opponentAvatar && <img className="avatar" src={opponentAvatar} alt="avatar" />}
-          <span className="player-name">{opponent?.name}</span>
-          {opponent && !opponent.connected && <span className="disconnected-tag">DISCONNECTED</span>}
-          {hand && gameState.players[opponentIndex]?.isDealer && <span className="marker dealer-marker">D/SB</span>}
-          {hand && gameState.players[opponentIndex]?.isBB && <span className="marker bb-marker">BB</span>}
-          <span className="stack">Chips: {opponent?.stack}</span>
-          {hand && hand.playerAllIn[opponentIndex] && <span className="all-in-badge">ALL IN</span>}
-        </div>
-        {hand && hand.playerBets[opponentIndex] > 0 && (
-          <div className="bet-badge">Bet: {hand.playerBets[opponentIndex]}</div>
-        )}
-        <div className="cards">
-          {opponent?.holeCards ? (
-            opponent.holeCards.map((card, i) => <CardDisplay key={i} card={card} />)
-          ) : (
-            hand && !hand.handOver ? (
-              <><CardBack /><CardBack /></>
-            ) : null
-          )}
-        </div>
+      {/* Opponents (top) */}
+      <div className="opponents-row">
+        {opponents.map(({ player, index }) => (
+          player && (
+            <PlayerArea
+              key={index}
+              player={player}
+              index={index}
+              isMe={false}
+              hand={hand}
+              gameState={gameState}
+              avatarFiles={avatarFiles}
+            />
+          )
+        ))}
       </div>
 
       {/* Board area (center) */}
@@ -92,7 +134,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
 
         {!hand?.handOver && (
           <div className="turn-indicator">
-            {isMyTurn ? 'Your turn' : `Waiting for ${opponent?.name}...`}
+            {isMyTurn ? 'Your turn' : `Waiting for ${gameState.players[hand?.currentPlayerIndex ?? 0]?.name}...`}
           </div>
         )}
 
@@ -103,32 +145,34 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
             <button className="btn btn-reset" onClick={onResetMatch}>Play Again</button>
           </div>
         )}
+
+        {/* Rebuy/Leave for busted players in unlimited mode */}
+        {gameState.mode === 'unlimited' && isBusted && (
+          <div className="busted-actions">
+            <p>You're out of chips!</p>
+            <button className="btn btn-rebuy" onClick={onRebuy}>Rebuy</button>
+            <button className="btn btn-leave" onClick={onLeave}>Leave Table</button>
+          </div>
+        )}
       </div>
 
       {/* My area (bottom) */}
-      <div className="player-area my-area">
-        <div className="player-info">
-          {myAvatar && <img className="avatar" src={myAvatar} alt="avatar" />}
-          <span className="player-name">{me?.name} (You)</span>
-          {hand && gameState.players[myIndex]?.isDealer && <span className="marker dealer-marker">D/SB</span>}
-          {hand && gameState.players[myIndex]?.isBB && <span className="marker bb-marker">BB</span>}
-          <span className="stack">Chips: {me?.stack}</span>
-          {hand && hand.playerAllIn[myIndex] && <span className="all-in-badge">ALL IN</span>}
-        </div>
-        {hand && hand.playerBets[myIndex] > 0 && (
-          <div className="bet-badge">Bet: {hand.playerBets[myIndex]}</div>
-        )}
-        <div className="cards">
-          {me?.holeCards?.map((card, i) => (
-            <CardDisplay key={i} card={card} />
-          ))}
-        </div>
+      {me && (
+        <div className="my-area-container">
+          <PlayerArea
+            player={me}
+            index={myIndex}
+            isMe={true}
+            hand={hand}
+            gameState={gameState}
+            avatarFiles={avatarFiles}
+          />
 
-        {/* Actions */}
-        {isMyTurn && gameState.legalActions && (
-          <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} />
-        )}
-      </div>
+          {isMyTurn && gameState.legalActions && (
+            <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} />
+          )}
+        </div>
+      )}
 
       <ActionLog log={gameState.actionLog} />
     </div>

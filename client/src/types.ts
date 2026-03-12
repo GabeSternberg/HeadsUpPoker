@@ -12,7 +12,9 @@ export interface PlayerInfo {
   stack: number;
   holeCards: Card[] | null;
   isDealer: boolean;
+  isSB: boolean;
   isBB: boolean;
+  folded: boolean;
 }
 
 export interface HandInfo {
@@ -21,8 +23,9 @@ export interface HandInfo {
   pot: number;
   currentBet: number;
   currentPlayerIndex: number;
-  playerBets: [number, number];
-  playerAllIn: [boolean, boolean];
+  playerBets: number[];
+  playerAllIn: boolean[];
+  playerFolded: boolean[];
   handOver: boolean;
   showdown: boolean;
   winner: number | null;
@@ -44,11 +47,12 @@ export interface GameState {
   settings: { startingSum: number; bigBlind: number };
   gameStarted: boolean;
   matchOver: boolean;
+  mode: 'headsup' | 'unlimited';
   hand: HandInfo | null;
   legalActions: LegalActions | null;
   actionLog: string[];
   myIndex: number;
   avatarMode: boolean;
-  avatarAssignment: [string | null, string | null];
+  avatarAssignment: (string | null)[];
   handNumber: number;
 }

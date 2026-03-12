@@ -82,6 +82,21 @@ function App() {
     socket.emit('nextHand');
   }, [socket]);
 
+  const handleSetMode = useCallback((mode: 'headsup' | 'unlimited') => {
+    if (!socket) return;
+    socket.emit('setMode', { mode });
+  }, [socket]);
+
+  const handleRebuy = useCallback(() => {
+    if (!socket) return;
+    socket.emit('rebuy');
+  }, [socket]);
+
+  const handleLeave = useCallback(() => {
+    if (!socket) return;
+    socket.emit('leaveTable');
+  }, [socket]);
+
   const handleSecretClick = () => {
     setShowCodeInput(true);
     setSecretCode('');
@@ -116,9 +131,11 @@ function App() {
     return <div className="app"><div className="loading">Connecting to server...</div></div>;
   }
 
+  const title = gameState.mode === 'unlimited' ? 'Poker' : 'Heads-Up Poker';
+
   return (
     <div className="app">
-      <h1>Heads-Up Poker</h1>
+      <h1>{title}</h1>
       {error && <div className="error">{error}</div>}
       {!gameState.gameStarted ? (
         <>
@@ -128,6 +145,7 @@ function App() {
             onUpdateSettings={handleUpdateSettings}
             onToggleReady={handleToggleReady}
             onSetAvatar={handleSetAvatar}
+            onSetMode={handleSetMode}
           />
           <div className="secret-area">
             {!showCodeInput && !gameState.avatarMode && (
@@ -157,6 +175,8 @@ function App() {
           onAction={handleAction}
           onResetMatch={handleResetMatch}
           onNextHand={handleNextHand}
+          onRebuy={handleRebuy}
+          onLeave={handleLeave}
           avatarFiles={avatarFiles}
         />
       )}

@@ -77,6 +77,11 @@ function App() {
     socket.emit('resetMatch');
   }, [socket]);
 
+  const handleNextHand = useCallback(() => {
+    if (!socket) return;
+    socket.emit('nextHand');
+  }, [socket]);
+
   const handleSecretClick = () => {
     setShowCodeInput(true);
     setSecretCode('');
@@ -151,6 +156,7 @@ function App() {
           myIndex={myIndex}
           onAction={handleAction}
           onResetMatch={handleResetMatch}
+          onNextHand={handleNextHand}
           avatarFiles={avatarFiles}
         />
       )}

@@ -54,10 +54,9 @@ export function getLegalActions(state: BettingState, playerIndex: number): {
   const canCall = toCall > 0 && stack > 0;
   const callAmount = Math.min(toCall, stack); // all-in for less if needed
 
-  // Min raise: current bet + max(lastRaiseSize, bigBlind)
-  // But preflop the BB counts as the opening bet, so lastRaiseSize starts at BB
-  const minRaiseIncrement = Math.max(state.lastRaiseSize, state.bigBlind);
-  const minRaiseTotal = state.currentBet + minRaiseIncrement;
+  // Min raise: must at least double the current bet (house rule)
+  // e.g. if current bet is 200, min raise is to 400
+  const minRaiseTotal = Math.max(state.currentBet * 2, state.currentBet + state.bigBlind);
   const maxRaiseTotal = state.playerBets[playerIndex] + stack; // all-in
 
   // Player can raise if they have more chips than what's needed to call

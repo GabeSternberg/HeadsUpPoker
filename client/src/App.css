@@ -175,6 +175,18 @@ h1 {
   color: #f39c12;
 }
 
+.bet-badge {
+  display: inline-block;
+  background: #f39c12;
+  color: #000;
+  font-size: 1.15rem;
+  font-weight: 700;
+  padding: 6px 18px;
+  border-radius: 20px;
+  margin: 6px 0;
+  text-align: center;
+}
+
 .all-in-badge {
   background: #e94560;
   color: #fff;
@@ -235,10 +247,15 @@ h1 {
 }
 
 .pot {
-  font-size: 1.2rem;
+  display: inline-block;
+  font-size: 1.4rem;
   font-weight: 700;
   color: #f1c40f;
-  margin-bottom: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 8px 24px;
+  border-radius: 24px;
+  border: 2px solid #f1c40f;
+  margin-bottom: 6px;
 }
 
 .round-label {
@@ -312,6 +329,8 @@ h1 {
 .btn-raise:hover { background: #e67e22; }
 .btn-reset { background: #9b59b6; color: #fff; padding: 10px 24px; }
 .btn-reset:hover { background: #8e44ad; }
+.btn-next-hand { background: #2ecc71; color: #000; padding: 12px 28px; font-size: 1.1rem; margin-top: 12px; }
+.btn-next-hand:hover { background: #27ae60; }
 
 .raise-controls {
   display: flex;

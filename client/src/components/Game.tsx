@@ -8,6 +8,7 @@ interface GameProps {
   myIndex: number;
   onAction: (type: string, amount?: number) => void;
   onResetMatch: () => void;
+  onNextHand: () => void;
   avatarFiles: { L: string[]; G: string[] };
 }
 
@@ -29,7 +30,7 @@ function getAvatarUrl(
   return `/${folder}/${files[idx < 0 ? 0 : idx]}`;
 }
 
-export default function Game({ gameState, myIndex, onAction, onResetMatch, avatarFiles }: GameProps) {
+export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, avatarFiles }: GameProps) {
   const opponentIndex = 1 - myIndex;
   const me = gameState.players[myIndex];
   const opponent = gameState.players[opponentIndex];
@@ -51,11 +52,11 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, avata
           {hand && gameState.players[opponentIndex]?.isDealer && <span className="marker dealer-marker">D/SB</span>}
           {hand && gameState.players[opponentIndex]?.isBB && <span className="marker bb-marker">BB</span>}
           <span className="stack">Chips: {opponent?.stack}</span>
-          {hand && hand.playerBets[opponentIndex] > 0 && (
-            <span className="current-bet">Bet: {hand.playerBets[opponentIndex]}</span>
-          )}
           {hand && hand.playerAllIn[opponentIndex] && <span className="all-in-badge">ALL IN</span>}
         </div>
+        {hand && hand.playerBets[opponentIndex] > 0 && (
+          <div className="bet-badge">Bet: {hand.playerBets[opponentIndex]}</div>
+        )}
         <div className="cards">
           {opponent?.holeCards ? (
             opponent.holeCards.map((card, i) => <CardDisplay key={i} card={card} />)
@@ -85,6 +86,10 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, avata
           <div className="result-message">{hand.resultMessage}</div>
         )}
 
+        {hand?.handOver && !gameState.matchOver && (
+          <button className="btn btn-next-hand" onClick={onNextHand}>Next Round</button>
+        )}
+
         {!hand?.handOver && (
           <div className="turn-indicator">
             {isMyTurn ? 'Your turn' : `Waiting for ${opponent?.name}...`}
@@ -108,11 +113,11 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, avata
           {hand && gameState.players[myIndex]?.isDealer && <span className="marker dealer-marker">D/SB</span>}
           {hand && gameState.players[myIndex]?.isBB && <span className="marker bb-marker">BB</span>}
           <span className="stack">Chips: {me?.stack}</span>
-          {hand && hand.playerBets[myIndex] > 0 && (
-            <span className="current-bet">Bet: {hand.playerBets[myIndex]}</span>
-          )}
           {hand && hand.playerAllIn[myIndex] && <span className="all-in-badge">ALL IN</span>}
         </div>
+        {hand && hand.playerBets[myIndex] > 0 && (
+          <div className="bet-badge">Bet: {hand.playerBets[myIndex]}</div>
+        )}
         <div className="cards">
           {me?.holeCards?.map((card, i) => (
             <CardDisplay key={i} card={card} />

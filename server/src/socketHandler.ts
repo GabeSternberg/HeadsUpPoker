@@ -5,13 +5,10 @@
 import { Server, Socket } from 'socket.io';
 import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, PlayerState } from './gameState';
 
-const HAND_DELAY_MS = 3000; // delay between hands
 
 export function setupSocketHandlers(io: Server): void {
   // Single room for simplicity
   let room: Room = createRoom();
-  let handTimer: ReturnType<typeof setTimeout> | null = null;
-
   function broadcastState(): void {
     for (let i = 0; i < 2; i++) {
       const player = room.players[i];
@@ -26,8 +23,6 @@ export function setupSocketHandlers(io: Server): void {
   }
 
   function startNextHand(): void {
-    if (handTimer) clearTimeout(handTimer);
-
     // Check if match is over
     if (checkMatchOver(room)) {
       broadcastState();
@@ -39,13 +34,6 @@ export function setupSocketHandlers(io: Server): void {
 
     startHand(room);
     broadcastState();
-  }
-
-  function scheduleNextHand(): void {
-    if (handTimer) clearTimeout(handTimer);
-    handTimer = setTimeout(() => {
-      startNextHand();
-    }, HAND_DELAY_MS);
   }
 
   io.on('connection', (socket: Socket) => {
@@ -146,11 +134,13 @@ export function setupSocketHandlers(io: Server): void {
       }
 
       broadcastState();
+    });
 
-      // If hand is over, schedule next hand
-      if (room.hand?.handOver) {
-        scheduleNextHand();
-      }
+    // Next hand (manual trigger after showdown/fold)
+    socket.on('nextHand', () => {
+      if (!room.hand?.handOver) return;
+      if (room.matchOver) return;
+      startNextHand();
     });
 
     // Avatar mode: activate
@@ -174,7 +164,6 @@ export function setupSocketHandlers(io: Server): void {
 
     // Reset match
     socket.on('resetMatch', () => {
-      if (handTimer) clearTimeout(handTimer);
       room = createRoom();
       // Re-assign both connected sockets
       const sockets = Array.from(io.sockets.sockets.values());

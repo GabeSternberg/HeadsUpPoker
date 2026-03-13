@@ -52,6 +52,8 @@ export interface HandState {
   resultMessage: string;
   // Players participating in this hand (seat indices)
   participants: number[];
+  // Each player's stack at the start of this hand (for side pot calculation)
+  startingStacks: number[];
 }
 
 export interface Settings {
@@ -191,6 +193,9 @@ export function startHand(room: Room): void {
   room.matchOver = false;
   room.handNumber++;
 
+  // Record starting stacks before blinds (for side pot calculation)
+  const startingStacks = room.players.map(p => p ? p.stack : 0);
+
   // Post blinds
   const sbAmount = Math.min(sb, room.players[sbIdx]!.stack);
   const bbAmount = Math.min(bb, room.players[bbIdx]!.stack);
@@ -252,6 +257,7 @@ export function startHand(room: Room): void {
     loserHand: null,
     resultMessage: '',
     participants,
+    startingStacks,
   };
 
   room.actionLog.push(`${room.players[sbIdx]!.name} posts small blind (${sbAmount})`);
@@ -497,53 +503,47 @@ interface SidePot {
 
 function calculateSidePots(room: Room): SidePot[] {
   const hand = room.hand!;
-  const nonFolded = hand.participants.filter(s => !hand.playerFolded[s]);
 
-  // Collect each player's total contribution to the pot this hand.
-  // We track this as their current bet + what was already added to pot from previous streets.
-  // Actually, playerBets only tracks current round. We need total contributions.
-  // The pot already contains all chips. We need to figure out how to divide it.
-  //
-  // For side pots, we need each player's TOTAL investment across all rounds.
-  // We can calculate this from: startingStack - currentStack for each participant.
-  const investments: { seat: number; amount: number }[] = [];
-  for (const s of nonFolded) {
-    const startStack = room.settings.startingSum; // This won't work for rebuys...
-    // Better: we know pot total and current stacks.
-    // Total invested = what they started with minus what they have now.
-    // But we don't track starting stack per hand. Let's compute from the pot.
-    //
-    // Alternative approach: the pot total is the sum of all contributions.
-    // For side pots, we sort all-in amounts and create layers.
-    investments.push({
-      seat: s,
-      amount: hand.playerAllIn[s]
-        ? (room.players[s]!.stack === 0
-          ? 0 // all-in, 0 remaining — we need the actual bet
-          : 0)
-        : 0,
-    });
+  // Total invested by each participant = startingStack - currentStack
+  // This includes folded players (their chips are in the pot too)
+  const invested: { seat: number; amount: number }[] = hand.participants.map(s => ({
+    seat: s,
+    amount: hand.startingStacks[s] - room.players[s]!.stack,
+  }));
+
+  // Get unique investment levels sorted ascending (these are the "layers")
+  const levels = [...new Set(invested.map(i => i.amount))].sort((a, b) => a - b);
+
+  const pots: SidePot[] = [];
+  let processedLevel = 0;
+
+  for (const level of levels) {
+    const layerSize = level - processedLevel;
+    if (layerSize <= 0) continue;
+
+    // Every player who invested >= this level contributes to this pot layer
+    const contributors = invested.filter(i => i.amount >= level);
+    const potAmount = layerSize * contributors.length;
+
+    // Only non-folded players who invested >= this level are eligible to win
+    const eligible = contributors
+      .filter(i => !hand.playerFolded[i.seat])
+      .map(i => i.seat);
+
+    if (potAmount > 0 && eligible.length > 0) {
+      pots.push({ amount: potAmount, eligible });
+    } else if (potAmount > 0 && eligible.length === 0) {
+      // All contributors at this level folded — add to next pot or give to remaining
+      // This shouldn't normally happen, but handle it: add to the last pot
+      if (pots.length > 0) {
+        pots[pots.length - 1].amount += potAmount;
+      }
+    }
+
+    processedLevel = level;
   }
 
-  // Simpler approach: For the initial implementation, just award full pot to the best hand.
-  // This is correct when no one is all-in for less.
-  // For multiple all-ins, we'll use a proper side-pot algorithm.
-
-  // Recalculate: track total invested per player across the whole hand.
-  // We can get this from hand.playerBets (current street) but we need ALL streets.
-  // Since pot already contains everything, we just need to split by all-in amount.
-
-  // Actually the simplest correct approach for side pots:
-  // Each non-folded player's total contribution = (their starting stack for this hand) - (their current stack)
-  // But we don't store "starting stack for this hand"...
-  //
-  // Let's add a different approach: the pot is already the right total.
-  // With only 1 pot (no side pots), just give it to the winner.
-  // For proper side pots: we need to track total invested. Let me just do the simple
-  // version: full pot goes to the best hand among non-folded players.
-  // This is correct for 2 players and for multi-player when no one is all-in for less.
-
-  return [{ amount: hand.pot, eligible: nonFolded }];
+  return pots;
 }
 
 /** Evaluate hands and award pot. */

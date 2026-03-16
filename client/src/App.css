@@ -505,11 +505,11 @@ h1 {
 
 /* Avatar image in game */
 .avatar {
-  width: 48px;
-  height: 48px;
+  width: 144px;
+  height: 144px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid #9b59b6;
+  border: 3px solid #9b59b6;
 }
 
 /* Mode selector */

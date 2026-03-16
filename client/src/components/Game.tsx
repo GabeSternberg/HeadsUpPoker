@@ -186,7 +186,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         {/* Last hand hover button */}
         {gameState.lastShowdown && !hand?.showdown && (
           <div className="last-hand-trigger">
-            <span className="last-hand-btn">Last Hand</span>
+            <span className="last-hand-btn">Last Showdown</span>
             <LastHandPreview data={gameState.lastShowdown} />
           </div>
         )}

@@ -444,31 +444,34 @@ function advanceRound(room: Room): void {
     return hand.playerAllIn[i] || hand.playerFolded[i];
   });
 
-  // Postflop: action starts at SB (or first non-folded, non-all-in player left of dealer)
-  let firstActor: number;
+  // Postflop: find first active (non-folded, non-all-in) player
+  // In heads-up: start from BB (non-dealer). In multi: start from SB.
+  let startFrom: number;
   if (room.mode === 'headsup') {
-    // Heads-up postflop: BB acts first (non-dealer)
-    const bbIdx = hand.participants.find(s => s !== hand.dealerIndex)!;
-    firstActor = bbIdx;
+    startFrom = hand.participants.find(s => s !== hand.dealerIndex)!;
   } else {
-    // Multi-player: start from SB position, find first active player
-    firstActor = hand.sbIndex;
-    const n = hand.participants.length;
-    const sbParticipantIdx = hand.participants.indexOf(hand.sbIndex);
-    for (let step = 0; step < n; step++) {
-      const idx = (sbParticipantIdx + step) % n;
-      const seat = hand.participants[idx];
-      if (!hand.playerFolded[seat] && !hand.playerAllIn[seat]) {
-        firstActor = seat;
-        break;
-      }
+    startFrom = hand.sbIndex;
+  }
+
+  // Find first active player starting from startFrom
+  let firstActor = startFrom;
+  const n = hand.participants.length;
+  const startIdx = hand.participants.indexOf(startFrom);
+  let foundActive = false;
+  for (let step = 0; step < n; step++) {
+    const idx = (startIdx + step) % n;
+    const seat = hand.participants[idx];
+    if (!hand.playerFolded[seat] && !hand.playerAllIn[seat]) {
+      firstActor = seat;
+      foundActive = true;
+      break;
     }
   }
 
   hand.currentPlayerIndex = firstActor;
 
-  // If all remaining players are all-in, run out
-  if (countActive(hand) === 0 && countNonFolded(hand) >= 2) {
+  // If no active players remain (all are all-in or folded), run out the board
+  if (!foundActive && countNonFolded(hand) >= 2) {
     runOutBoard(room);
   }
 }

@@ -42,6 +42,12 @@ export interface LegalActions {
   maxRaise: number;
 }
 
+export interface LastShowdownInfo {
+  playerHands: { seat: number; name: string; holeCards: Card[] }[];
+  communityCards: Card[];
+  resultMessage: string;
+}
+
 export interface GameState {
   players: (PlayerInfo | null)[];
   settings: { startingSum: number; bigBlind: number };
@@ -55,4 +61,5 @@ export interface GameState {
   avatarMode: boolean;
   avatarAssignment: (string | null)[];
   handNumber: number;
+  lastShowdown: LastShowdownInfo | null;
 }

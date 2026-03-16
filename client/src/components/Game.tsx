@@ -1,4 +1,5 @@
-import { GameState, PlayerInfo } from '../types';
+import { useState } from 'react';
+import { GameState, PlayerInfo, LastShowdownInfo } from '../types';
 import { CardDisplay, CardBack } from './Card';
 import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
@@ -79,6 +80,32 @@ function PlayerArea({
   );
 }
 
+function LastHandPreview({ data }: { data: LastShowdownInfo }) {
+  return (
+    <div className="last-hand-popup">
+      <div className="last-hand-title">Last Showdown</div>
+      <div className="last-hand-community">
+        {data.communityCards.map((card, i) => (
+          <CardDisplay key={i} card={card} />
+        ))}
+      </div>
+      <div className="last-hand-players">
+        {data.playerHands.map((ph) => (
+          <div key={ph.seat} className="last-hand-player">
+            <span className="last-hand-name">{ph.name}</span>
+            <div className="last-hand-cards">
+              {ph.holeCards.map((card, i) => (
+                <CardDisplay key={i} card={card} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="last-hand-result">{data.resultMessage}</div>
+    </div>
+  );
+}
+
 export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, avatarFiles }: GameProps) {
   const me = gameState.players[myIndex];
   const hand = gameState.hand;
@@ -110,48 +137,57 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         ))}
       </div>
 
-      {/* Board area (center) */}
-      <div className="board-area">
-        {hand && (
-          <>
-            <div className="pot">Pot: {hand.pot}</div>
-            <div className="round-label">{hand.round.toUpperCase()}</div>
-            <div className="community-cards">
-              {hand.communityCards.map((card, i) => (
-                <CardDisplay key={i} card={card} />
-              ))}
+      {/* Board + last hand area */}
+      <div className="board-row">
+        <div className="board-area">
+          {hand && (
+            <>
+              <div className="pot">Pot: {hand.pot}</div>
+              <div className="round-label">{hand.round.toUpperCase()}</div>
+              <div className="community-cards">
+                {hand.communityCards.map((card, i) => (
+                  <CardDisplay key={i} card={card} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {hand?.handOver && hand.resultMessage && (
+            <div className="result-message">{hand.resultMessage}</div>
+          )}
+
+          {hand?.handOver && !gameState.matchOver && (
+            <button className="btn btn-next-hand" onClick={onNextHand}>Next Round</button>
+          )}
+
+          {!hand?.handOver && (
+            <div className="turn-indicator">
+              {isMyTurn ? 'Your turn' : `Waiting for ${gameState.players[hand?.currentPlayerIndex ?? 0]?.name}...`}
             </div>
-          </>
-        )}
+          )}
 
-        {hand?.handOver && hand.resultMessage && (
-          <div className="result-message">{hand.resultMessage}</div>
-        )}
+          {gameState.matchOver && (
+            <div className="match-over">
+              <h2>Match Over!</h2>
+              <p>{me && me.stack > 0 ? 'You win!' : 'You lose!'}</p>
+              <button className="btn btn-reset" onClick={onResetMatch}>Play Again</button>
+            </div>
+          )}
 
-        {hand?.handOver && !gameState.matchOver && (
-          <button className="btn btn-next-hand" onClick={onNextHand}>Next Round</button>
-        )}
+          {gameState.mode === 'unlimited' && isBusted && (
+            <div className="busted-actions">
+              <p>You're out of chips!</p>
+              <button className="btn btn-rebuy" onClick={onRebuy}>Rebuy</button>
+              <button className="btn btn-leave" onClick={onLeave}>Leave Table</button>
+            </div>
+          )}
+        </div>
 
-        {!hand?.handOver && (
-          <div className="turn-indicator">
-            {isMyTurn ? 'Your turn' : `Waiting for ${gameState.players[hand?.currentPlayerIndex ?? 0]?.name}...`}
-          </div>
-        )}
-
-        {gameState.matchOver && (
-          <div className="match-over">
-            <h2>Match Over!</h2>
-            <p>{me && me.stack > 0 ? 'You win!' : 'You lose!'}</p>
-            <button className="btn btn-reset" onClick={onResetMatch}>Play Again</button>
-          </div>
-        )}
-
-        {/* Rebuy/Leave for busted players in unlimited mode */}
-        {gameState.mode === 'unlimited' && isBusted && (
-          <div className="busted-actions">
-            <p>You're out of chips!</p>
-            <button className="btn btn-rebuy" onClick={onRebuy}>Rebuy</button>
-            <button className="btn btn-leave" onClick={onLeave}>Leave Table</button>
+        {/* Last hand hover button */}
+        {gameState.lastShowdown && !hand?.showdown && (
+          <div className="last-hand-trigger">
+            <span className="last-hand-btn">Last Hand</span>
+            <LastHandPreview data={gameState.lastShowdown} />
           </div>
         )}
       </div>

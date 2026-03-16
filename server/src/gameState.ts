@@ -61,6 +61,12 @@ export interface Settings {
   bigBlind: number;
 }
 
+export interface LastShowdown {
+  playerHands: { seat: number; name: string; holeCards: Card[] }[];
+  communityCards: Card[];
+  resultMessage: string;
+}
+
 export interface Room {
   players: (PlayerState | null)[];
   settings: Settings;
@@ -73,6 +79,7 @@ export interface Room {
   avatarMode: boolean;
   avatarAssignment: (string | null)[];
   handNumber: number;
+  lastShowdown: LastShowdown | null;
 }
 
 export function createRoom(): Room {
@@ -88,6 +95,7 @@ export function createRoom(): Room {
     avatarMode: false,
     avatarAssignment: [null, null],
     handNumber: 0,
+    lastShowdown: null,
   };
 }
 
@@ -606,6 +614,17 @@ function doShowdown(room: Room): void {
   }
 
   room.actionLog.push(hand.resultMessage);
+
+  // Save showdown data for "last hand" preview
+  room.lastShowdown = {
+    playerHands: nonFolded.map(s => ({
+      seat: s,
+      name: room.players[s]!.name,
+      holeCards: [...room.players[s]!.holeCards],
+    })),
+    communityCards: [...hand.communityCards],
+    resultMessage: hand.resultMessage,
+  };
 }
 
 /** Get the legal actions for the current player. */
@@ -660,6 +679,7 @@ export function getClientState(room: Room, playerIndex: number) {
     avatarMode: room.avatarMode,
     avatarAssignment: room.avatarAssignment,
     handNumber: room.handNumber,
+    lastShowdown: room.lastShowdown,
   };
 }
 

@@ -13,9 +13,12 @@ const RANK_NAMES: Record<number, string> = {
 };
 
 export function CardDisplay({ card }: { card: CardType }) {
-  const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
+  const colorClass =
+    card.suit === 'hearts' || card.suit === 'diamonds' ? 'red'
+    : card.suit === 'clubs' ? 'club-green'
+    : 'black';
   return (
-    <span className={`card ${isRed ? 'red' : 'black'}`}>
+    <span className={`card ${colorClass}`}>
       {RANK_NAMES[card.rank]}{SUIT_SYMBOLS[card.suit]}
     </span>
   );

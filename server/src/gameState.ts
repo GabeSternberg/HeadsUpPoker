@@ -15,6 +15,7 @@
 import { Deck, Card, cardToString } from './deck';
 import { BettingState, getLegalActions, processAction, newStreetBetting, PlayerAction } from './betting';
 import { evaluateHand, compareHands, HandResult } from './handEvaluator';
+import { appendHandRow, StatsLogData } from './statsLogger';
 
 export type Round = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type GameMode = 'headsup' | 'unlimited';
@@ -68,6 +69,60 @@ export interface LastShowdown {
   resultMessage: string;
 }
 
+export interface PlayerStats {
+  handsPlayed: number;
+  vpipOpportunities: number;
+  vpipCount: number;
+  pfrOpportunities: number;
+  pfrCount: number;
+  threeBetOpportunities: number;
+  threeBetCount: number;
+  foldToThreeBetOpportunities: number;
+  foldToThreeBetCount: number;
+  cbetOpportunities: number;
+  cbetCount: number;
+  foldToCbetOpportunities: number;
+  foldToCbetCount: number;
+  postflopBetsRaises: number;
+  postflopCalls: number;
+  wtsdOpportunities: number;
+  wtsdCount: number;
+  wsdCount: number;
+}
+
+export interface HandStatsContext {
+  preflopAggressor: number | null;
+  preflopRaiseCount: number;
+  playerVPIP: boolean[];
+  playerPFR: boolean[];
+  playerFacedRaisePreflop: boolean[];
+  playerThreeBet: boolean[];
+  playerRaisedFacedThreeBet: boolean[];
+  playerFoldedToThreeBet: boolean[];
+  sawFlop: boolean[];
+  cbetOpportunity: boolean[];
+  cbetMade: boolean[];
+  flopCbetOccurred: boolean;
+  foldToCbetOpportunity: boolean[];
+  foldedToCbet: boolean[];
+  postflopBetsRaises: number[];
+  postflopCalls: number[];
+}
+
+function emptyStats(): PlayerStats {
+  return {
+    handsPlayed: 0,
+    vpipOpportunities: 0, vpipCount: 0,
+    pfrOpportunities: 0, pfrCount: 0,
+    threeBetOpportunities: 0, threeBetCount: 0,
+    foldToThreeBetOpportunities: 0, foldToThreeBetCount: 0,
+    cbetOpportunities: 0, cbetCount: 0,
+    foldToCbetOpportunities: 0, foldToCbetCount: 0,
+    postflopBetsRaises: 0, postflopCalls: 0,
+    wtsdOpportunities: 0, wtsdCount: 0, wsdCount: 0,
+  };
+}
+
 export interface Room {
   players: (PlayerState | null)[];
   settings: Settings;
@@ -82,6 +137,8 @@ export interface Room {
   handNumber: number;
   lastShowdown: LastShowdown | null;
   lastFoldedHand: { actionLog: string[] } | null;
+  stats: PlayerStats[];
+  handStatsCtx: HandStatsContext | null;
 }
 
 export function createRoom(): Room {
@@ -99,6 +156,8 @@ export function createRoom(): Room {
     handNumber: 0,
     lastShowdown: null,
     lastFoldedHand: null,
+    stats: [emptyStats(), emptyStats()],
+    handStatsCtx: null,
   };
 }
 
@@ -203,6 +262,27 @@ export function startHand(room: Room): void {
   room.actionLog = [];
   room.matchOver = false;
   room.handNumber++;
+
+  // Initialise per-hand stats context
+  const n = room.players.length;
+  room.handStatsCtx = {
+    preflopAggressor: null,
+    preflopRaiseCount: 0,
+    playerVPIP: new Array(n).fill(false),
+    playerPFR: new Array(n).fill(false),
+    playerFacedRaisePreflop: new Array(n).fill(false),
+    playerThreeBet: new Array(n).fill(false),
+    playerRaisedFacedThreeBet: new Array(n).fill(false),
+    playerFoldedToThreeBet: new Array(n).fill(false),
+    sawFlop: new Array(n).fill(false),
+    cbetOpportunity: new Array(n).fill(false),
+    cbetMade: new Array(n).fill(false),
+    flopCbetOccurred: false,
+    foldToCbetOpportunity: new Array(n).fill(false),
+    foldedToCbet: new Array(n).fill(false),
+    postflopBetsRaises: new Array(n).fill(0),
+    postflopCalls: new Array(n).fill(0),
+  };
 
   // Record starting stacks before blinds (for side pot calculation)
   const startingStacks = room.players.map(p => p ? p.stack : 0);
@@ -363,6 +443,61 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
       break;
   }
 
+  // --- Per-action stats instrumentation ---
+  const ctx = room.handStatsCtx;
+  if (ctx) {
+    if (hand.round === 'preflop') {
+      if (action.type === 'call' || action.type === 'raise') {
+        ctx.playerVPIP[playerIndex] = true;
+      }
+      if (action.type === 'raise') {
+        ctx.playerPFR[playerIndex] = true;
+        if (ctx.preflopAggressor !== null && ctx.preflopAggressor !== playerIndex) {
+          // Re-raise: this is a 3-bet (or higher)
+          ctx.playerFacedRaisePreflop[playerIndex] = true;
+          ctx.playerThreeBet[playerIndex] = true;
+          ctx.playerRaisedFacedThreeBet[ctx.preflopAggressor] = true;
+        }
+        ctx.preflopAggressor = playerIndex;
+        ctx.preflopRaiseCount++;
+      }
+      if (action.type === 'call' && ctx.preflopAggressor !== null && ctx.preflopAggressor !== playerIndex) {
+        ctx.playerFacedRaisePreflop[playerIndex] = true;
+      }
+      if (action.type === 'fold') {
+        if (ctx.preflopAggressor !== null && ctx.preflopAggressor !== playerIndex) {
+          ctx.playerFacedRaisePreflop[playerIndex] = true;
+        }
+        if (ctx.playerRaisedFacedThreeBet[playerIndex]) {
+          ctx.playerFoldedToThreeBet[playerIndex] = true;
+        }
+      }
+    } else if (hand.round !== 'showdown') {
+      // Post-flop (flop/turn/river)
+      if (action.type === 'raise') {
+        ctx.postflopBetsRaises[playerIndex]++;
+        // C-bet: preflopAggressor bets first on flop (currentBet was 0 before this action)
+        if (hand.round === 'flop' && !ctx.flopCbetOccurred
+            && ctx.preflopAggressor === playerIndex
+            && bettingState.currentBet === 0) {
+          ctx.cbetMade[playerIndex] = true;
+          ctx.flopCbetOccurred = true;
+          for (const s of hand.participants) {
+            if (s !== playerIndex && !hand.playerFolded[s]) {
+              ctx.foldToCbetOpportunity[s] = true;
+            }
+          }
+        }
+      }
+      if (action.type === 'call') {
+        ctx.postflopCalls[playerIndex]++;
+      }
+      if (action.type === 'fold' && ctx.foldToCbetOpportunity[playerIndex]) {
+        ctx.foldedToCbet[playerIndex] = true;
+      }
+    }
+  }
+
   if (result.handOver) {
     // Everyone else folded — last player standing wins
     const winnerIdx = hand.participants.find(s => !hand.playerFolded[s])!;
@@ -373,6 +508,7 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
     hand.pot = 0;
     room.actionLog.push(hand.resultMessage);
     room.lastFoldedHand = { actionLog: [...room.actionLog] };
+    commitHandStats(room, false, []);
     return { valid: true };
   }
 
@@ -435,6 +571,17 @@ function advanceRound(room: Room): void {
   }
 
   hand.round = nextRound;
+
+  // Stats: mark sawFlop and c-bet opportunity
+  if (nextRound === 'flop' && room.handStatsCtx) {
+    const sctx = room.handStatsCtx;
+    for (const s of hand.participants) {
+      if (!hand.playerFolded[s]) sctx.sawFlop[s] = true;
+    }
+    if (sctx.preflopAggressor !== null && !hand.playerFolded[sctx.preflopAggressor]) {
+      sctx.cbetOpportunity[sctx.preflopAggressor] = true;
+    }
+  }
 
   // Deal community cards
   if (nextRound === 'flop') {
@@ -561,6 +708,80 @@ function calculateSidePots(room: Room): SidePot[] {
   return pots;
 }
 
+/** Commit per-hand stat context into cumulative counters and log to CSV. */
+function commitHandStats(room: Room, isShowdown: boolean, showdownWinners: number[]): void {
+  const ctx = room.handStatsCtx;
+  if (!ctx) return;
+  const hand = room.hand!;
+
+  for (const s of hand.participants) {
+    // Ensure stats slot exists
+    while (room.stats.length <= s) room.stats.push(emptyStats());
+    const st = room.stats[s];
+
+    st.handsPlayed++;
+    st.vpipOpportunities++;
+    if (ctx.playerVPIP[s]) st.vpipCount++;
+    st.pfrOpportunities++;
+    if (ctx.playerPFR[s]) st.pfrCount++;
+
+    if (ctx.playerFacedRaisePreflop[s]) {
+      st.threeBetOpportunities++;
+      if (ctx.playerThreeBet[s]) st.threeBetCount++;
+    }
+    if (ctx.playerRaisedFacedThreeBet[s]) {
+      st.foldToThreeBetOpportunities++;
+      if (ctx.playerFoldedToThreeBet[s]) st.foldToThreeBetCount++;
+    }
+    if (ctx.cbetOpportunity[s]) {
+      st.cbetOpportunities++;
+      if (ctx.cbetMade[s]) st.cbetCount++;
+    }
+    if (ctx.foldToCbetOpportunity[s]) {
+      st.foldToCbetOpportunities++;
+      if (ctx.foldedToCbet[s]) st.foldToCbetCount++;
+    }
+
+    st.postflopBetsRaises += ctx.postflopBetsRaises[s] || 0;
+    st.postflopCalls += ctx.postflopCalls[s] || 0;
+
+    if (ctx.sawFlop[s]) {
+      st.wtsdOpportunities++;
+      if (isShowdown && !hand.playerFolded[s]) st.wtsdCount++;
+    }
+  }
+
+  // W$SD: winners at showdown
+  if (isShowdown) {
+    for (const w of showdownWinners) {
+      if (room.stats[w]) room.stats[w].wsdCount++;
+    }
+  }
+
+  // CSV logging (avatar mode only)
+  if (room.avatarMode) {
+    const logData: StatsLogData = {
+      handNumber: room.handNumber,
+      players: [0, 1].map(i => {
+        const p = room.players[i];
+        if (!p) return null;
+        return {
+          name: p.name,
+          role: room.avatarAssignment[i] ?? '',
+          startStack: hand.startingStacks[i] ?? 0,
+          endStack: p.stack,
+        };
+      }),
+      winnerName: hand.winner !== null ? (room.players[hand.winner]?.name ?? 'split') : 'split',
+      resultMessage: hand.resultMessage,
+      stats: [0, 1].map(i => room.stats[i] ?? null),
+    };
+    appendHandRow(logData);
+  }
+
+  room.handStatsCtx = null;
+}
+
 /** Evaluate hands and award pot. */
 function doShowdown(room: Room): void {
   const hand = room.hand!;
@@ -618,6 +839,16 @@ function doShowdown(room: Room): void {
   }
 
   room.actionLog.push(hand.resultMessage);
+
+  // Determine showdown winners for W$SD tracking
+  const showdownWinners: number[] = [];
+  if (hand.winner !== null) {
+    showdownWinners.push(hand.winner);
+  } else {
+    // Split: all non-folded participants are winners
+    showdownWinners.push(...hand.participants.filter(s => !hand.playerFolded[s]));
+  }
+  commitHandStats(room, true, showdownWinners);
 
   // Save showdown data for "last showdown" preview
   room.lastShowdown = {
@@ -685,6 +916,7 @@ export function getClientState(room: Room, playerIndex: number) {
     handNumber: room.handNumber,
     lastShowdown: room.lastShowdown,
     lastFoldedHand: room.lastFoldedHand,
+    stats: room.stats,
   };
 }
 

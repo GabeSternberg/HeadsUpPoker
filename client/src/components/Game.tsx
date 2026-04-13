@@ -3,6 +3,7 @@ import { GameState, PlayerInfo, LastShowdownInfo } from '../types';
 import { CardDisplay, CardBack } from './Card';
 import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
+import StatsPanel from './StatsPanel';
 
 interface GameProps {
   gameState: GameState;
@@ -52,11 +53,29 @@ function PlayerArea({
   const isCurrentTurn = hand && !hand.handOver && hand.currentPlayerIndex === index;
   const role = gameState.avatarMode ? gameState.avatarAssignment[index] : null;
   const displayName = role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : player.name;
+  const rawStats = gameState.stats?.[index];
+  const showStats = gameState.avatarMode && rawStats && rawStats.handsPlayed >= 0;
 
   return (
     <div className={`player-area ${isMe ? 'my-area' : 'opponent-area'} ${isFolded ? 'folded' : ''} ${isCurrentTurn ? 'active-turn' : ''}`}>
       <div className="player-info">
-        {avatar && <img className="avatar" src={avatar} alt="avatar" />}
+        {avatar && (
+          <div className="avatar-wrapper">
+            <img className="avatar" src={avatar} alt="avatar" />
+            {showStats && (
+              <div className="stats-trigger">
+                <button className="stats-btn" title="Stats">📊</button>
+                <StatsPanel raw={rawStats!} displayName={displayName} />
+              </div>
+            )}
+          </div>
+        )}
+        {!avatar && showStats && (
+          <div className="stats-trigger">
+            <button className="stats-btn" title="Stats">📊</button>
+            <StatsPanel raw={rawStats!} displayName={displayName} />
+          </div>
+        )}
         <span className="player-name">{displayName}{isMe ? ' (You)' : ''}</span>
         {!player.connected && <span className="disconnected-tag">DISCONNECTED</span>}
         {hand && player.isDealer && <span className="marker dealer-marker">D</span>}

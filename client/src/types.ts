@@ -42,6 +42,19 @@ export interface LegalActions {
   maxRaise: number;
 }
 
+export interface PlayerStatsRaw {
+  handsPlayed: number;
+  vpipOpportunities: number; vpipCount: number;
+  pfrOpportunities: number; pfrCount: number;
+  threeBetOpportunities: number; threeBetCount: number;
+  foldToThreeBetOpportunities: number; foldToThreeBetCount: number;
+  cbetOpportunities: number; cbetCount: number;
+  foldToCbetOpportunities: number; foldToCbetCount: number;
+  postflopBetsRaises: number; postflopCalls: number;
+  wtsdOpportunities: number; wtsdCount: number;
+  wsdCount: number;
+}
+
 export interface LastShowdownInfo {
   playerHands: { seat: number; name: string; holeCards: Card[] }[];
   communityCards: Card[];
@@ -63,4 +76,5 @@ export interface GameState {
   handNumber: number;
   lastShowdown: LastShowdownInfo | null;
   lastFoldedHand: { actionLog: string[] } | null;
+  stats: PlayerStatsRaw[];
 }

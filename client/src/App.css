@@ -350,40 +350,46 @@ h1 {
   margin-bottom: 8px;
 }
 
-/* New action layout: left column (check/call + fold) + right raise button */
-.action-main-row {
+/* Action trio: check/call, fold (optional), raise — all equal width in one row */
+.action-trio {
   display: flex;
   gap: 8px;
-  align-items: stretch;
   margin-bottom: 8px;
-  justify-content: space-between;
 }
 
-.action-main-row .btn-raise-main {
-  margin-left: auto;
-}
-
-.action-left {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-.action-left .btn {
+.btn-trio {
   flex: 1;
-}
-
-/* When only one button (no fold): let it be taller naturally */
-.action-left-solo .btn {
-  padding-top: 18px;
-  padding-bottom: 18px;
-}
-
-.btn-raise-main {
-  min-width: 130px;
   white-space: nowrap;
 }
+
+/* Raise keypad */
+.raise-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.btn-key {
+  background: #2c3e6d;
+  color: #e0e0e0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 10px 0;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-key:hover { background: #3d5a99; }
+
+.btn-key-del {
+  background: #4a2c2c;
+  color: #e74c3c;
+}
+
+.btn-key-del:hover { background: #6b3030; }
 
 .btn {
   padding: 10px 20px;
@@ -1035,9 +1041,9 @@ h1 {
 }
 
 /* Action panel: bigger tap targets */
-.mobile-ui .btn {
-  padding: 11px 18px;
-  font-size: 1rem;
+.mobile-ui .btn-trio {
+  padding: 12px 8px;
+  font-size: 0.95rem;
 }
 
 .mobile-ui .btn-next-hand {
@@ -1049,6 +1055,12 @@ h1 {
 .mobile-ui .btn-preset {
   padding: 9px 14px;
   font-size: 0.95rem;
+}
+
+/* Bigger keypad keys in mobile */
+.mobile-ui .btn-key {
+  padding: 14px 0;
+  font-size: 1.2rem;
 }
 
 .mobile-ui .raise-controls {

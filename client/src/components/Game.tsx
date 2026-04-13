@@ -50,12 +50,14 @@ function PlayerArea({
   const avatar = getAvatarUrl(index, gameState, avatarFiles);
   const isFolded = hand?.playerFolded[index];
   const isCurrentTurn = hand && !hand.handOver && hand.currentPlayerIndex === index;
+  const role = gameState.avatarMode ? gameState.avatarAssignment[index] : null;
+  const displayName = role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : player.name;
 
   return (
     <div className={`player-area ${isMe ? 'my-area' : 'opponent-area'} ${isFolded ? 'folded' : ''} ${isCurrentTurn ? 'active-turn' : ''}`}>
       <div className="player-info">
         {avatar && <img className="avatar" src={avatar} alt="avatar" />}
-        <span className="player-name">{player.name}{isMe ? ' (You)' : ''}</span>
+        <span className="player-name">{displayName}{isMe ? ' (You)' : ''}</span>
         {!player.connected && <span className="disconnected-tag">DISCONNECTED</span>}
         {hand && player.isDealer && <span className="marker dealer-marker">D</span>}
         {hand && player.isSB && <span className="marker sb-marker">SB</span>}
@@ -67,15 +69,13 @@ function PlayerArea({
       {hand && hand.playerBets[index] > 0 && (
         <div className="bet-badge">Bet: {hand.playerBets[index]}</div>
       )}
-      <div className="cards">
-        {player.holeCards ? (
-          player.holeCards.map((card, i) => <CardDisplay key={i} card={card} />)
-        ) : (
-          hand && !hand.handOver && !isFolded ? (
-            <><CardBack /><CardBack /></>
-          ) : null
-        )}
-      </div>
+      {(isMe || hand?.showdown) && (
+        <div className="cards">
+          {player.holeCards ? (
+            player.holeCards.map((card, i) => <CardDisplay key={i} card={card} />)
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

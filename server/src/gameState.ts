@@ -373,7 +373,6 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
     hand.pot = 0;
     room.actionLog.push(hand.resultMessage);
     room.lastFoldedHand = { actionLog: [...room.actionLog] };
-    room.lastShowdown = null;
     return { valid: true };
   }
 
@@ -620,8 +619,7 @@ function doShowdown(room: Room): void {
 
   room.actionLog.push(hand.resultMessage);
 
-  // Save showdown data for "last showdown" preview; clear fold data
-  room.lastFoldedHand = null;
+  // Save showdown data for "last showdown" preview
   room.lastShowdown = {
     playerHands: nonFolded.map(s => ({
       seat: s,

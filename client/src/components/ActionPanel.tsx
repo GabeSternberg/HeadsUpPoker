@@ -25,13 +25,13 @@ export default function ActionPanel({ legalActions, onAction, pot }: ActionPanel
   return (
     <div className="action-panel">
       <div className="action-buttons">
-        {legalActions.canFold && (
+        {legalActions.canFold && !legalActions.canCheck && (
           <button className="btn btn-fold" onClick={() => onAction('fold')}>
             Fold
           </button>
         )}
         {legalActions.canCheck && (
-          <button className="btn btn-check" onClick={() => onAction('check')}>
+          <button className="btn btn-check btn-check-free" onClick={() => onAction('check')}>
             Check
           </button>
         )}
@@ -49,6 +49,7 @@ export default function ActionPanel({ legalActions, onAction, pot }: ActionPanel
             <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(Math.floor(raiseAmount / 2)))}>1/2x</button>
             <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(raiseAmount * 2))}>2x</button>
             <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(Math.floor(pot / 2)))}>1/2 Pot</button>
+            <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(Math.floor(pot * 3 / 4)))}>3/4 Pot</button>
             <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(pot))}>Pot</button>
           </div>
           <div className="raise-slider-row">

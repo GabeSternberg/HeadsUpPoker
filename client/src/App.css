@@ -108,6 +108,34 @@ h1 {
   font-style: italic;
 }
 
+.preset-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.btn-preset-lobby {
+  padding: 5px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #0f3460;
+  color: #888;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-preset-lobby:hover {
+  background: #1a4a7a;
+  color: #ccc;
+}
+
+.btn-preset-lobby.active {
+  background: #e94560;
+  color: #fff;
+  border-color: #e94560;
+}
+
 .ready-button {
   display: block;
   width: 100%;
@@ -333,6 +361,7 @@ h1 {
 }
 
 .btn-fold { background: #e74c3c; color: #fff; }
+.btn-check-free { background: #666 !important; color: #ddd !important; }
 .btn-fold:hover { background: #c0392b; }
 .btn-check { background: #2ecc71; color: #000; }
 .btn-check:hover { background: #27ae60; }

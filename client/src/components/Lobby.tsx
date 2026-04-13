@@ -146,6 +146,10 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
             onChange={e => handleStartingSumChange(e.target.value)}
             min={1}
           />
+          <div className="preset-buttons">
+            <button className={`btn btn-preset-lobby ${startingSum === 500 ? 'active' : ''}`} onClick={() => handleStartingSumChange('500')}>500</button>
+            <button className={`btn btn-preset-lobby ${startingSum === 1000 ? 'active' : ''}`} onClick={() => handleStartingSumChange('1000')}>1000</button>
+          </div>
         </div>
         <div className="setting-row">
           <label>Big Blind:</label>
@@ -155,6 +159,10 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
             onChange={e => handleBigBlindChange(e.target.value)}
             min={1}
           />
+          <div className="preset-buttons">
+            <button className={`btn btn-preset-lobby ${bigBlind === 10 ? 'active' : ''}`} onClick={() => handleBigBlindChange('10')}>10</button>
+            <button className={`btn btn-preset-lobby ${bigBlind === 20 ? 'active' : ''}`} onClick={() => handleBigBlindChange('20')}>20</button>
+          </div>
         </div>
         <div className="setting-row">
           <label>Small Blind:</label>

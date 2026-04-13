@@ -716,3 +716,171 @@ h1 {
   padding-top: 8px;
   border-top: 1px solid #333;
 }
+
+/* UI mode toggle in lobby */
+.ui-mode-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.ui-mode-buttons .btn-mode {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+/* ===================== MOBILE UI ===================== */
+.mobile-ui .player-area {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8px 10px;
+  gap: 10px;
+}
+
+/* Avatar shrinks to 48px in mobile */
+.mobile-ui .avatar {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+/* Player info stacks vertically beside avatar */
+.mobile-ui .player-info {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* Cards inline, smaller */
+.mobile-ui .card {
+  width: 42px;
+  height: 58px;
+  font-size: 0.95rem;
+  border-radius: 6px;
+}
+
+/* Cards row right next to avatar block */
+.mobile-ui .cards {
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+/* Bet badge compact */
+.mobile-ui .bet-badge {
+  font-size: 0.9rem;
+  padding: 3px 10px;
+  margin: 2px 0 0;
+}
+
+/* Board area compact */
+.mobile-ui .board-area {
+  padding: 10px 12px;
+  min-height: 0;
+}
+
+.mobile-ui .pot {
+  font-size: 1.1rem;
+  padding: 5px 16px;
+  margin-bottom: 4px;
+}
+
+.mobile-ui .round-label {
+  font-size: 0.75rem;
+  margin-bottom: 8px;
+}
+
+.mobile-ui .community-cards {
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.mobile-ui .result-message {
+  font-size: 0.95rem;
+  padding: 5px;
+}
+
+.mobile-ui .turn-indicator {
+  font-size: 0.85rem;
+  padding: 5px;
+}
+
+/* Shrink action panel buttons a bit */
+.mobile-ui .btn {
+  padding: 8px 14px;
+  font-size: 0.9rem;
+}
+
+.mobile-ui .btn-next-hand {
+  padding: 8px 18px;
+  font-size: 0.95rem;
+}
+
+/* Action log shorter on mobile */
+.mobile-ui .log-entries {
+  max-height: 100px;
+}
+
+.mobile-ui .action-log {
+  padding: 10px;
+}
+
+/* Reduce app padding on mobile — target app wrapper via body class trick is not available,
+   but we can target the game's parent .app by adding a class. Instead reduce via CSS only: */
+body:has(.mobile-ui) .app {
+  padding: 10px;
+}
+
+body:has(.mobile-ui) h1 {
+  font-size: 1.3rem;
+  margin-bottom: 10px;
+}
+
+/* Reduce gap between sections */
+.mobile-ui {
+  gap: 8px;
+}
+
+/* my-area-container compact */
+.mobile-ui .my-area-container {
+  padding: 8px 10px;
+}
+
+.mobile-ui .action-panel {
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.mobile-ui .raise-controls {
+  gap: 5px;
+}
+
+.mobile-ui .raise-presets {
+  gap: 4px;
+}
+
+.mobile-ui .btn-preset {
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+.mobile-ui .opponents-row {
+  gap: 6px;
+}
+
+/* Stack + all-in badge smaller */
+.mobile-ui .stack {
+  font-size: 0.85rem;
+}
+
+.mobile-ui .all-in-badge,
+.mobile-ui .folded-badge,
+.mobile-ui .marker {
+  font-size: 0.7rem;
+  padding: 1px 5px;
+}
+
+.mobile-ui .player-name {
+  font-size: 0.9rem;
+}

@@ -62,7 +62,7 @@ function App() {
     socket.emit('action', { type, amount });
   }, [socket]);
 
-  const handleUpdateSettings = useCallback((settings: { startingSum?: number; bigBlind?: number }) => {
+  const handleUpdateSettings = useCallback((settings: { startingSum?: number; bigBlind?: number; uiMode?: 'mobile' | 'pc' }) => {
     if (!socket) return;
     socket.emit('updateSettings', settings);
   }, [socket]);

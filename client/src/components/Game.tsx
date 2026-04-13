@@ -119,7 +119,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
   const isBusted = me && me.stack <= 0 && hand?.handOver;
 
   return (
-    <div className="game">
+    <div className={`game${gameState.settings.uiMode === 'mobile' ? ' mobile-ui' : ''}`}>
       {/* Opponents (top) */}
       <div className="opponents-row">
         {opponents.map(({ player, index }) => (

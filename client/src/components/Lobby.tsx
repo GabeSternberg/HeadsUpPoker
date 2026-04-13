@@ -4,7 +4,7 @@ import { GameState } from '../types';
 interface LobbyProps {
   gameState: GameState;
   myIndex: number;
-  onUpdateSettings: (settings: { startingSum?: number; bigBlind?: number }) => void;
+  onUpdateSettings: (settings: { startingSum?: number; bigBlind?: number; uiMode?: 'mobile' | 'pc' }) => void;
   onToggleReady: () => void;
   onSetAvatar: (playerIndex: number, role: 'L' | 'G') => void;
   onSetMode: (mode: 'headsup' | 'unlimited') => void;
@@ -120,6 +120,19 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
         <div className="setting-row">
           <label>Small Blind:</label>
           <span className="computed-value">{smallBlind}</span>
+        </div>
+        <div className="setting-row">
+          <label>UI Mode:</label>
+          <div className="ui-mode-buttons">
+            <button
+              className={`btn btn-mode ${gameState.settings.uiMode === 'mobile' ? 'active' : ''}`}
+              onClick={() => onUpdateSettings({ uiMode: 'mobile' })}
+            >Mobile</button>
+            <button
+              className={`btn btn-mode ${gameState.settings.uiMode === 'pc' ? 'active' : ''}`}
+              onClick={() => onUpdateSettings({ uiMode: 'pc' })}
+            >PC</button>
+          </div>
         </div>
       </div>
 

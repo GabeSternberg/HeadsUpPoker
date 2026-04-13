@@ -4,14 +4,16 @@ import { GameState } from '../types';
 interface LobbyProps {
   gameState: GameState;
   myIndex: number;
-  onUpdateSettings: (settings: { startingSum?: number; bigBlind?: number; uiMode?: 'mobile' | 'pc' }) => void;
+  onUpdateSettings: (settings: { startingSum?: number; bigBlind?: number }) => void;
   onToggleReady: () => void;
   onSetAvatar: (playerIndex: number, role: 'L' | 'G') => void;
   onSetMode: (mode: 'headsup' | 'unlimited') => void;
   onKickPlayer: (targetIndex: number) => void;
+  uiMode: 'mobile' | 'pc';
+  onSetUiMode: (mode: 'mobile' | 'pc') => void;
 }
 
-export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode, onKickPlayer }: LobbyProps) {
+export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode, onKickPlayer, uiMode, onSetUiMode }: LobbyProps) {
   const [startingSum, setStartingSum] = useState(gameState.settings.startingSum);
   const [bigBlind, setBigBlind] = useState(gameState.settings.bigBlind);
   const [kickTarget, setKickTarget] = useState<number | null>(null);
@@ -172,12 +174,12 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
           <label>UI Mode:</label>
           <div className="ui-mode-buttons">
             <button
-              className={`btn btn-mode ${gameState.settings.uiMode === 'mobile' ? 'active' : ''}`}
-              onClick={() => onUpdateSettings({ uiMode: 'mobile' })}
+              className={`btn btn-mode ${uiMode === 'mobile' ? 'active' : ''}`}
+              onClick={() => onSetUiMode('mobile')}
             >Mobile</button>
             <button
-              className={`btn btn-mode ${gameState.settings.uiMode === 'pc' ? 'active' : ''}`}
-              onClick={() => onUpdateSettings({ uiMode: 'pc' })}
+              className={`btn btn-mode ${uiMode === 'pc' ? 'active' : ''}`}
+              onClick={() => onSetUiMode('pc')}
             >PC</button>
           </div>
         </div>

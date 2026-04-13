@@ -12,6 +12,15 @@ function App() {
   const [myIndex, setMyIndex] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
 
+  // Per-client UI mode (not shared with server)
+  const [uiMode, setUiModeState] = useState<'mobile' | 'pc'>(() =>
+    (localStorage.getItem('uiMode') as 'mobile' | 'pc') || 'mobile'
+  );
+  const handleSetUiMode = useCallback((mode: 'mobile' | 'pc') => {
+    localStorage.setItem('uiMode', mode);
+    setUiModeState(mode);
+  }, []);
+
   // Secret code state
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [secretCode, setSecretCode] = useState('');
@@ -62,7 +71,7 @@ function App() {
     socket.emit('action', { type, amount });
   }, [socket]);
 
-  const handleUpdateSettings = useCallback((settings: { startingSum?: number; bigBlind?: number; uiMode?: 'mobile' | 'pc' }) => {
+  const handleUpdateSettings = useCallback((settings: { startingSum?: number; bigBlind?: number }) => {
     if (!socket) return;
     socket.emit('updateSettings', settings);
   }, [socket]);
@@ -152,6 +161,8 @@ function App() {
             onSetAvatar={handleSetAvatar}
             onSetMode={handleSetMode}
             onKickPlayer={handleKickPlayer}
+            uiMode={uiMode}
+            onSetUiMode={handleSetUiMode}
           />
           <div className="secret-area">
             {!showCodeInput && !gameState.avatarMode && (
@@ -184,6 +195,8 @@ function App() {
           onRebuy={handleRebuy}
           onLeave={handleLeave}
           avatarFiles={avatarFiles}
+          uiMode={uiMode}
+          onSetUiMode={handleSetUiMode}
         />
       )}
     </div>

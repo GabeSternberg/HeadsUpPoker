@@ -8,7 +8,7 @@ interface ActionPanelProps {
   isMobile?: boolean;
 }
 
-export default function ActionPanel({ legalActions, onAction, pot }: ActionPanelProps) {
+export default function ActionPanel({ legalActions, onAction, pot, isMobile }: ActionPanelProps) {
   const { minRaise, maxRaise } = legalActions;
   const [keypad, setKeypad] = useState(String(minRaise));
 
@@ -77,13 +77,36 @@ export default function ActionPanel({ legalActions, onAction, pot }: ActionPanel
             <button className="btn btn-preset" onClick={() => setPreset(pot)}>Pot</button>
             <button className="btn btn-preset" onClick={() => setPreset(pot * 2)}>2x Pot</button>
           </div>
-          <div className="raise-keypad">
-            {['1','2','3','4','5','6','7','8','9'].map(d => (
-              <button key={d} className="btn btn-key" onClick={() => pressDigit(d)}>{d}</button>
-            ))}
-            <button className="btn btn-key" onClick={() => pressDigit('0')}>0</button>
-            <button className="btn btn-key btn-key-del" onClick={pressDelete}>⌫</button>
-          </div>
+          {isMobile ? (
+            <div className="raise-keypad">
+              {['1','2','3','4','5','6','7','8','9'].map(d => (
+                <button key={d} className="btn btn-key" onClick={() => pressDigit(d)}>{d}</button>
+              ))}
+              <button className="btn btn-key" onClick={() => pressDigit('0')}>0</button>
+              <button className="btn btn-key btn-key-del" onClick={pressDelete}>⌫</button>
+            </div>
+          ) : (
+            <div className="raise-slider-row">
+              <input
+                type="range"
+                min={minRaise}
+                max={maxRaise}
+                value={raiseAmount}
+                onChange={e => setKeypad(e.target.value)}
+              />
+              <input
+                type="number"
+                min={minRaise}
+                max={maxRaise}
+                value={keypad}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  if (val >= minRaise && val <= maxRaise) setKeypad(e.target.value);
+                }}
+              />
+              {isAllIn && <span className="all-in-tag">ALL IN</span>}
+            </div>
+          )}
         </div>
       )}
     </div>

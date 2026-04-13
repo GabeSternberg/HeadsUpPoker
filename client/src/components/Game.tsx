@@ -14,6 +14,8 @@ interface GameProps {
   onRebuy: () => void;
   onLeave: () => void;
   avatarFiles: { L: string[]; G: string[] };
+  uiMode: 'mobile' | 'pc';
+  onSetUiMode: (mode: 'mobile' | 'pc') => void;
 }
 
 function getAvatarUrl(
@@ -138,7 +140,7 @@ function LastHandPreview({ data }: { data: LastShowdownInfo }) {
   );
 }
 
-export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, avatarFiles }: GameProps) {
+export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, avatarFiles, uiMode, onSetUiMode }: GameProps) {
   const me = gameState.players[myIndex];
   const hand = gameState.hand;
   const isMyTurn = hand && !hand.handOver && hand.currentPlayerIndex === myIndex;
@@ -151,7 +153,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
   const isBusted = me && me.stack <= 0 && hand?.handOver;
 
   return (
-    <div className={`game${gameState.settings.uiMode === 'mobile' ? ' mobile-ui' : ''}`}>
+    <div className={`game${uiMode === 'mobile' ? ' mobile-ui' : ''}`}>
       {/* Opponents (top) */}
       <div className="opponents-row">
         {opponents.map(({ player, index }) => (
@@ -244,12 +246,16 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           />
 
           {isMyTurn && gameState.legalActions && (
-            <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} isMobile={gameState.settings.uiMode === 'mobile'} />
+            <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} isMobile={uiMode === 'mobile'} />
           )}
         </div>
       )}
 
-      <ActionLog log={gameState.actionLog} isMobile={gameState.settings.uiMode === 'mobile'} />
+      <div className="ui-mode-toggle-row">
+        <button className={`btn btn-mode ${uiMode === 'mobile' ? 'active' : ''}`} onClick={() => onSetUiMode('mobile')}>Mobile</button>
+        <button className={`btn btn-mode ${uiMode === 'pc' ? 'active' : ''}`} onClick={() => onSetUiMode('pc')}>PC</button>
+      </div>
+      <ActionLog log={gameState.actionLog} isMobile={uiMode === 'mobile'} />
     </div>
   );
 }

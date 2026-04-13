@@ -948,6 +948,18 @@ h1 {
 
 .btn-kick-cancel:hover { background: #444; color: #ccc; }
 
+/* In-game UI mode toggle row */
+.ui-mode-toggle-row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.ui-mode-toggle-row .btn-mode {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+}
+
 /* UI mode toggle in lobby */
 .ui-mode-buttons {
   display: flex;

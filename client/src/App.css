@@ -391,6 +391,23 @@ h1 {
 
 .btn-key-del:hover { background: #6b3030; }
 
+.keypad-display {
+  background: #0f0f1e;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  text-align: center;
+  margin: 6px 0 4px;
+  letter-spacing: 0.05em;
+}
+.keypad-display-empty {
+  color: #555;
+  font-style: italic;
+}
+
 .btn {
   padding: 10px 20px;
   font-size: 1rem;

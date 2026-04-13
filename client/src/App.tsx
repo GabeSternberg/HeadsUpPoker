@@ -82,6 +82,11 @@ function App() {
     socket.emit('nextHand');
   }, [socket]);
 
+  const handleKickPlayer = useCallback((targetIndex: number) => {
+    if (!socket) return;
+    socket.emit('kickPlayer', { targetIndex });
+  }, [socket]);
+
   const handleSetMode = useCallback((mode: 'headsup' | 'unlimited') => {
     if (!socket) return;
     socket.emit('setMode', { mode });
@@ -146,6 +151,7 @@ function App() {
             onToggleReady={handleToggleReady}
             onSetAvatar={handleSetAvatar}
             onSetMode={handleSetMode}
+            onKickPlayer={handleKickPlayer}
           />
           <div className="secret-area">
             {!showCodeInput && !gameState.avatarMode && (

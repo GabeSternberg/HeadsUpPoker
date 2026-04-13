@@ -8,11 +8,14 @@ interface LobbyProps {
   onToggleReady: () => void;
   onSetAvatar: (playerIndex: number, role: 'L' | 'G') => void;
   onSetMode: (mode: 'headsup' | 'unlimited') => void;
+  onKickPlayer: (targetIndex: number) => void;
 }
 
-export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode }: LobbyProps) {
+export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode, onKickPlayer }: LobbyProps) {
   const [startingSum, setStartingSum] = useState(gameState.settings.startingSum);
   const [bigBlind, setBigBlind] = useState(gameState.settings.bigBlind);
+  const [kickTarget, setKickTarget] = useState<number | null>(null);
+  const [kickPassword, setKickPassword] = useState('');
 
   useEffect(() => {
     setStartingSum(gameState.settings.startingSum);
@@ -43,6 +46,24 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
     } else {
       setBigBlind(num || 0);
     }
+  };
+
+  const handleKickClick = (i: number) => {
+    setKickTarget(i);
+    setKickPassword('');
+  };
+
+  const handleKickSubmit = (i: number) => {
+    if (kickPassword === '123') {
+      onKickPlayer(i);
+    }
+    setKickTarget(null);
+    setKickPassword('');
+  };
+
+  const handleKickKeyDown = (e: React.KeyboardEvent, i: number) => {
+    if (e.key === 'Enter') handleKickSubmit(i);
+    if (e.key === 'Escape') { setKickTarget(null); setKickPassword(''); }
   };
 
   return (
@@ -90,6 +111,24 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
                     className={`btn btn-avatar ${assignment === 'G' ? 'active' : ''}`}
                     onClick={() => onSetAvatar(i, 'G')}
                   >G</button>
+                </div>
+              )}
+              {player && i !== myIndex && kickTarget !== i && (
+                <button className="btn-kick" onClick={() => handleKickClick(i)}>✕</button>
+              )}
+              {player && i !== myIndex && kickTarget === i && (
+                <div className="kick-confirm">
+                  <input
+                    type="password"
+                    placeholder="password"
+                    value={kickPassword}
+                    onChange={e => setKickPassword(e.target.value)}
+                    onKeyDown={e => handleKickKeyDown(e, i)}
+                    autoFocus
+                    className="kick-password-input"
+                  />
+                  <button className="btn-kick-confirm" onClick={() => handleKickSubmit(i)}>Kick</button>
+                  <button className="btn-kick-cancel" onClick={() => setKickTarget(null)}>Cancel</button>
                 </div>
               )}
             </div>

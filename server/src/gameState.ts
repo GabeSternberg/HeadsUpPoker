@@ -59,6 +59,7 @@ export interface HandState {
 export interface Settings {
   startingSum: number;
   bigBlind: number;
+  uiMode: 'mobile' | 'pc';
 }
 
 export interface LastShowdown {
@@ -85,7 +86,7 @@ export interface Room {
 export function createRoom(): Room {
   return {
     players: [null, null],
-    settings: { startingSum: 1000, bigBlind: 20 },
+    settings: { startingSum: 1000, bigBlind: 20, uiMode: 'mobile' },
     gameStarted: false,
     matchOver: false,
     hand: null,

@@ -50,7 +50,7 @@ export interface LastShowdownInfo {
 
 export interface GameState {
   players: (PlayerInfo | null)[];
-  settings: { startingSum: number; bigBlind: number };
+  settings: { startingSum: number; bigBlind: number; uiMode: 'mobile' | 'pc' };
   gameStarted: boolean;
   matchOver: boolean;
   mode: 'headsup' | 'unlimited';

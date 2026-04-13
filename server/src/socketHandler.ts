@@ -134,8 +134,15 @@ export function setupSocketHandlers(io: Server): void {
     });
 
     // Update settings
-    socket.on('updateSettings', (data: { startingSum?: number; bigBlind?: number }) => {
-      if (room.gameStarted) return;
+    socket.on('updateSettings', (data: { startingSum?: number; bigBlind?: number; uiMode?: 'mobile' | 'pc' }) => {
+      if (data.uiMode === 'mobile' || data.uiMode === 'pc') {
+        room.settings.uiMode = data.uiMode;
+      }
+
+      if (room.gameStarted) {
+        broadcastState();
+        return;
+      }
 
       if (data.startingSum !== undefined) {
         const val = Math.floor(data.startingSum);
@@ -257,6 +264,21 @@ export function setupSocketHandlers(io: Server): void {
       if (otherIndex < room.players.length) {
         room.avatarAssignment[otherIndex] = otherRole;
       }
+      broadcastState();
+    });
+
+    // Kick player (lobby only)
+    socket.on('kickPlayer', (data: { targetIndex: number }) => {
+      if (room.gameStarted) return;
+      const { targetIndex } = data;
+      if (targetIndex < 0 || targetIndex >= room.players.length) return;
+      const target = room.players[targetIndex];
+      if (!target) return;
+
+      const targetSocket = io.sockets.sockets.get(target.id);
+      room.players[targetIndex] = null;
+      targetSocket?.emit('kicked', { message: 'You were kicked from the lobby' });
+      targetSocket?.disconnect();
       broadcastState();
     });
 

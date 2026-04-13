@@ -737,6 +737,15 @@ h1 {
   gap: 4px;
 }
 
+.last-fold-log {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.85rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .last-hand-result {
   font-size: 0.9rem;
   font-weight: 600;

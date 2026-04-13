@@ -81,6 +81,7 @@ export interface Room {
   avatarAssignment: (string | null)[];
   handNumber: number;
   lastShowdown: LastShowdown | null;
+  lastFoldedHand: { actionLog: string[] } | null;
 }
 
 export function createRoom(): Room {
@@ -97,6 +98,7 @@ export function createRoom(): Room {
     avatarAssignment: [null, null],
     handNumber: 0,
     lastShowdown: null,
+    lastFoldedHand: null,
   };
 }
 
@@ -370,6 +372,8 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
     room.players[winnerIdx]!.stack += hand.pot;
     hand.pot = 0;
     room.actionLog.push(hand.resultMessage);
+    room.lastFoldedHand = { actionLog: [...room.actionLog] };
+    room.lastShowdown = null;
     return { valid: true };
   }
 
@@ -616,7 +620,8 @@ function doShowdown(room: Room): void {
 
   room.actionLog.push(hand.resultMessage);
 
-  // Save showdown data for "last hand" preview
+  // Save showdown data for "last showdown" preview; clear fold data
+  room.lastFoldedHand = null;
   room.lastShowdown = {
     playerHands: nonFolded.map(s => ({
       seat: s,
@@ -681,6 +686,7 @@ export function getClientState(room: Room, playerIndex: number) {
     avatarAssignment: room.avatarAssignment,
     handNumber: room.handNumber,
     lastShowdown: room.lastShowdown,
+    lastFoldedHand: room.lastFoldedHand,
   };
 }
 

@@ -80,6 +80,19 @@ function PlayerArea({
   );
 }
 
+function LastFoldedPreview({ data }: { data: { actionLog: string[] } }) {
+  return (
+    <div className="last-hand-popup">
+      <div className="last-hand-title">Last Hand</div>
+      <div className="last-fold-log">
+        {data.actionLog.map((entry, i) => (
+          <div key={i} className={`log-entry ${entry.startsWith('---') ? 'log-round' : ''}`}>{entry}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LastHandPreview({ data }: { data: LastShowdownInfo }) {
   return (
     <div className="last-hand-popup">
@@ -183,11 +196,18 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           )}
         </div>
 
-        {/* Last hand hover button */}
+        {/* Last showdown hover button */}
         {gameState.lastShowdown && !hand?.showdown && (
           <div className="last-hand-trigger">
             <span className="last-hand-btn">Last Showdown</span>
             <LastHandPreview data={gameState.lastShowdown} />
+          </div>
+        )}
+        {/* Last folded hand hover button */}
+        {gameState.lastFoldedHand && !hand?.showdown && (
+          <div className="last-hand-trigger">
+            <span className="last-hand-btn">Last Hand</span>
+            <LastFoldedPreview data={gameState.lastFoldedHand} />
           </div>
         )}
       </div>

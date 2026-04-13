@@ -356,13 +356,18 @@ h1 {
   gap: 8px;
   align-items: stretch;
   margin-bottom: 8px;
+  justify-content: space-between;
+}
+
+.action-main-row .btn-raise-main {
+  margin-left: auto;
 }
 
 .action-left {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex: 1;
+  flex: 0 0 auto;
 }
 
 .action-left .btn {

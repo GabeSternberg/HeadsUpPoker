@@ -350,6 +350,36 @@ h1 {
   margin-bottom: 8px;
 }
 
+/* New action layout: left column (check/call + fold) + right raise button */
+.action-main-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.action-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.action-left .btn {
+  flex: 1;
+}
+
+/* When only one button (no fold): let it be taller naturally */
+.action-left-solo .btn {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.btn-raise-main {
+  min-width: 130px;
+  white-space: nowrap;
+}
+
 .btn {
   padding: 10px 20px;
   font-size: 1rem;
@@ -361,7 +391,10 @@ h1 {
 }
 
 .btn-fold { background: #e74c3c; color: #fff; }
-.btn-check-free { background: #666 !important; color: #ddd !important; }
+.btn-fold:hover { background: #c0392b; }
+/* Check with no previous bet: blue (same family as call) */
+.btn-check-free { background: #2980b9 !important; color: #fff !important; }
+.btn-check-free:hover { background: #2471a3 !important; }
 .btn-fold:hover { background: #c0392b; }
 .btn-check { background: #2ecc71; color: #000; }
 .btn-check:hover { background: #27ae60; }

@@ -820,6 +820,10 @@ h1 {
 }
 
 /* ===================== MOBILE UI ===================== */
+.mobile-ui {
+  gap: 8px;
+}
+
 .mobile-ui .player-area {
   display: flex;
   flex-direction: row;
@@ -828,10 +832,10 @@ h1 {
   gap: 10px;
 }
 
-/* Avatar shrinks to 48px in mobile */
+/* Avatar: 72px (1.5× the old 48px) */
 .mobile-ui .avatar {
-  width: 48px;
-  height: 48px;
+  width: 72px;
+  height: 72px;
   flex-shrink: 0;
 }
 
@@ -844,25 +848,24 @@ h1 {
   margin-bottom: 0;
 }
 
-/* Cards inline, smaller */
+/* Cards: 63×87px (1.5× the old 42×58px) */
 .mobile-ui .card {
-  width: 42px;
-  height: 58px;
-  font-size: 0.95rem;
-  border-radius: 6px;
+  width: 63px;
+  height: 87px;
+  font-size: 1.4rem;
+  border-radius: 8px;
 }
 
-/* Cards row right next to avatar block */
 .mobile-ui .cards {
   flex-shrink: 0;
-  gap: 4px;
+  gap: 5px;
 }
 
-/* Bet badge compact */
+/* Bet badge: 1.5× bigger */
 .mobile-ui .bet-badge {
-  font-size: 0.9rem;
-  padding: 3px 10px;
-  margin: 2px 0 0;
+  font-size: 1.35rem;
+  padding: 5px 16px;
+  margin: 3px 0 0;
 }
 
 /* Board area compact */
@@ -897,40 +900,47 @@ h1 {
   padding: 5px;
 }
 
-/* Shrink action panel buttons a bit */
+/* Action panel: bigger tap targets */
 .mobile-ui .btn {
-  padding: 8px 14px;
-  font-size: 0.9rem;
+  padding: 11px 18px;
+  font-size: 1rem;
 }
 
 .mobile-ui .btn-next-hand {
-  padding: 8px 18px;
+  padding: 10px 20px;
+  font-size: 1rem;
+}
+
+/* Bigger preset buttons in mobile */
+.mobile-ui .btn-preset {
+  padding: 9px 14px;
   font-size: 0.95rem;
 }
 
-/* Action log shorter on mobile */
-.mobile-ui .log-entries {
-  max-height: 100px;
+.mobile-ui .raise-controls {
+  gap: 6px;
 }
 
-.mobile-ui .action-log {
-  padding: 10px;
+.mobile-ui .raise-presets {
+  gap: 5px;
+  flex-wrap: wrap;
 }
 
-/* Reduce app padding on mobile — target app wrapper via body class trick is not available,
-   but we can target the game's parent .app by adding a class. Instead reduce via CSS only: */
-body:has(.mobile-ui) .app {
-  padding: 10px;
-}
-
-body:has(.mobile-ui) h1 {
-  font-size: 1.3rem;
-  margin-bottom: 10px;
-}
-
-/* Reduce gap between sections */
-.mobile-ui {
+/* Number input row (no slider) */
+.raise-number-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.raise-number-row input[type="number"] {
+  width: 90px;
+  padding: 8px 10px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 1rem;
 }
 
 /* my-area-container compact */
@@ -943,24 +953,10 @@ body:has(.mobile-ui) h1 {
   padding-top: 6px;
 }
 
-.mobile-ui .raise-controls {
-  gap: 5px;
-}
-
-.mobile-ui .raise-presets {
-  gap: 4px;
-}
-
-.mobile-ui .btn-preset {
-  padding: 4px 8px;
-  font-size: 0.8rem;
-}
-
 .mobile-ui .opponents-row {
   gap: 6px;
 }
 
-/* Stack + all-in badge smaller */
 .mobile-ui .stack {
   font-size: 0.85rem;
 }
@@ -974,4 +970,29 @@ body:has(.mobile-ui) h1 {
 
 .mobile-ui .player-name {
   font-size: 0.9rem;
+}
+
+/* Action log collapsible toggle */
+.action-log-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.action-log-toggle:hover {
+  color: #e0e0e0;
+}
+
+/* Action log collapsed: no bottom padding needed */
+.mobile-ui .action-log {
+  padding: 10px;
+}
+
+/* Reduce app padding on mobile */
+body:has(.mobile-ui) .app {
+  padding: 10px;
+}
+
+body:has(.mobile-ui) h1 {
+  font-size: 1.3rem;
+  margin-bottom: 10px;
 }

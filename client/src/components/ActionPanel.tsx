@@ -5,12 +5,12 @@ interface ActionPanelProps {
   legalActions: LegalActions;
   onAction: (type: string, amount?: number) => void;
   pot: number;
+  isMobile?: boolean;
 }
 
-export default function ActionPanel({ legalActions, onAction, pot }: ActionPanelProps) {
+export default function ActionPanel({ legalActions, onAction, pot, isMobile }: ActionPanelProps) {
   const [raiseAmount, setRaiseAmount] = useState(legalActions.minRaise);
 
-  // Reset raise amount when legal actions change (new turn/round)
   useEffect(() => {
     setRaiseAmount(legalActions.minRaise);
   }, [legalActions.minRaise, legalActions.maxRaise]);
@@ -18,22 +18,70 @@ export default function ActionPanel({ legalActions, onAction, pot }: ActionPanel
   const clamp = (val: number) =>
     Math.max(legalActions.minRaise, Math.min(legalActions.maxRaise, Math.floor(val)));
 
-  const handleRaise = () => {
-    onAction('raise', raiseAmount);
-  };
+  const handleRaise = () => onAction('raise', raiseAmount);
+
+  if (isMobile) {
+    return (
+      <div className="action-panel">
+        {/* Top row: fold/check/call + raise button */}
+        <div className="action-buttons">
+          {legalActions.canFold && !legalActions.canCheck && (
+            <button className="btn btn-fold" onClick={() => onAction('fold')}>Fold</button>
+          )}
+          {legalActions.canCheck && (
+            <button className="btn btn-check btn-check-free" onClick={() => onAction('check')}>Check</button>
+          )}
+          {legalActions.canCall && (
+            <button className="btn btn-call" onClick={() => onAction('call')}>
+              Call ({legalActions.callAmount})
+            </button>
+          )}
+          {legalActions.canRaise && (
+            <button className="btn btn-raise" onClick={handleRaise}>
+              Raise {raiseAmount}{raiseAmount === legalActions.maxRaise ? ' (All In)' : ''}
+            </button>
+          )}
+        </div>
+        {/* Preset buttons + number input (no slider) */}
+        {legalActions.canRaise && (
+          <div className="raise-controls">
+            <div className="raise-presets">
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(raiseAmount - 10))}>-10</button>
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(raiseAmount + 10))}>+10</button>
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(Math.floor(raiseAmount / 2)))}>1/2x</button>
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(raiseAmount * 2))}>2x</button>
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(Math.floor(pot / 2)))}>1/2 Pot</button>
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(Math.floor(pot * 3 / 4)))}>3/4 Pot</button>
+              <button className="btn btn-preset" onClick={() => setRaiseAmount(clamp(pot))}>Pot</button>
+            </div>
+            <div className="raise-number-row">
+              <input
+                type="number"
+                min={legalActions.minRaise}
+                max={legalActions.maxRaise}
+                value={raiseAmount}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  if (val >= legalActions.minRaise && val <= legalActions.maxRaise) {
+                    setRaiseAmount(val);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="action-panel">
       <div className="action-buttons">
         {legalActions.canFold && !legalActions.canCheck && (
-          <button className="btn btn-fold" onClick={() => onAction('fold')}>
-            Fold
-          </button>
+          <button className="btn btn-fold" onClick={() => onAction('fold')}>Fold</button>
         )}
         {legalActions.canCheck && (
-          <button className="btn btn-check btn-check-free" onClick={() => onAction('check')}>
-            Check
-          </button>
+          <button className="btn btn-check btn-check-free" onClick={() => onAction('check')}>Check</button>
         )}
         {legalActions.canCall && (
           <button className="btn btn-call" onClick={() => onAction('call')}>

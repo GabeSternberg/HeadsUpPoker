@@ -205,12 +205,12 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           />
 
           {isMyTurn && gameState.legalActions && (
-            <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} />
+            <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} isMobile={gameState.settings.uiMode === 'mobile'} />
           )}
         </div>
       )}
 
-      <ActionLog log={gameState.actionLog} />
+      <ActionLog log={gameState.actionLog} isMobile={gameState.settings.uiMode === 'mobile'} />
     </div>
   );
 }

@@ -772,7 +772,12 @@ function commitHandStats(room: Room, isShowdown: boolean, showdownWinners: numbe
           endStack: p.stack,
         };
       }),
-      winnerName: hand.winner !== null ? (room.players[hand.winner]?.name ?? 'split') : 'split',
+      winnerName: hand.winner !== null
+        ? (() => {
+            const role = room.avatarAssignment[hand.winner];
+            return role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : (room.players[hand.winner]?.name ?? 'split');
+          })()
+        : 'split',
       resultMessage: hand.resultMessage,
       stats: [0, 1].map(i => room.stats[i] ?? null),
     };

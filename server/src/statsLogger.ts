@@ -1,6 +1,7 @@
 /**
  * CSV logging for poker hand stats.
  * Appends one row per hand (avatar mode only) to preserve full history.
+ * Columns are always Gabe/Liana regardless of seat order.
  */
 
 import fs from 'fs';
@@ -10,13 +11,14 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../logs');
 export const CSV_PATH = path.join(DATA_DIR, 'poker_hands.csv');
 
 const HEADER = [
-  'timestamp', 'handNumber', 'p0Name', 'p0Role', 'p0StartStack', 'p0EndStack',
-  'p1Name', 'p1Role', 'p1StartStack', 'p1EndStack',
+  'timestamp', 'handNumber',
+  'gabe_startStack', 'gabe_endStack',
+  'liana_startStack', 'liana_endStack',
   'winner', 'resultMessage',
-  'p0_hands', 'p0_vpip', 'p0_pfr', 'p0_3bet', 'p0_fold3bet',
-  'p0_cbet', 'p0_foldCbet', 'p0_af', 'p0_wtsd', 'p0_wsd',
-  'p1_hands', 'p1_vpip', 'p1_pfr', 'p1_3bet', 'p1_fold3bet',
-  'p1_cbet', 'p1_foldCbet', 'p1_af', 'p1_wtsd', 'p1_wsd',
+  'gabe_hands', 'gabe_vpip', 'gabe_pfr', 'gabe_3bet', 'gabe_fold3bet',
+  'gabe_cbet', 'gabe_foldCbet', 'gabe_af', 'gabe_wtsd', 'gabe_wsd',
+  'liana_hands', 'liana_vpip', 'liana_pfr', 'liana_3bet', 'liana_fold3bet',
+  'liana_cbet', 'liana_foldCbet', 'liana_af', 'liana_wtsd', 'liana_wsd',
 ].join(',');
 
 export function initCSV(): void {
@@ -60,38 +62,44 @@ export interface StatsLogData {
   } | null>;
 }
 
+function statsColumns(st: StatsLogData['stats'][number]): string {
+  if (!st) return Array(10).fill('').join(',');
+  return [
+    st.handsPlayed,
+    pct(st.vpipCount, st.vpipOpportunities),
+    pct(st.pfrCount, st.pfrOpportunities),
+    pct(st.threeBetCount, st.threeBetOpportunities),
+    pct(st.foldToThreeBetCount, st.foldToThreeBetOpportunities),
+    pct(st.cbetCount, st.cbetOpportunities),
+    pct(st.foldToCbetCount, st.foldToCbetOpportunities),
+    afStr(st.postflopBetsRaises, st.postflopCalls),
+    pct(st.wtsdCount, st.wtsdOpportunities),
+    pct(st.wsdCount, st.wtsdCount),
+  ].join(',');
+}
+
 export function appendHandRow(data: StatsLogData): void {
   try {
     const ts = new Date().toISOString();
-    const p = (i: number) => data.players[i];
-    const s = (i: number) => data.stats[i];
 
-    const statsColumns = (i: number): string => {
-      const st = s(i);
-      if (!st) return Array(10).fill('').join(',');
-      return [
-        st.handsPlayed,
-        pct(st.vpipCount, st.vpipOpportunities),
-        pct(st.pfrCount, st.pfrOpportunities),
-        pct(st.threeBetCount, st.threeBetOpportunities),
-        pct(st.foldToThreeBetCount, st.foldToThreeBetOpportunities),
-        pct(st.cbetCount, st.cbetOpportunities),
-        pct(st.foldToCbetCount, st.foldToCbetOpportunities),
-        afStr(st.postflopBetsRaises, st.postflopCalls),
-        pct(st.wtsdCount, st.wtsdOpportunities),
-        pct(st.wsdCount, st.wtsdCount),
-      ].join(',');
-    };
+    // Find Gabe (role 'G') and Liana (role 'L') by role, not seat index
+    const gabeIdx  = data.players.findIndex(p => p?.role === 'G');
+    const lianaIdx = data.players.findIndex(p => p?.role === 'L');
+
+    const gabe  = gabeIdx  >= 0 ? data.players[gabeIdx]  : null;
+    const liana = lianaIdx >= 0 ? data.players[lianaIdx] : null;
+    const gabeSt  = gabeIdx  >= 0 ? data.stats[gabeIdx]  : null;
+    const lianaSt = lianaIdx >= 0 ? data.stats[lianaIdx] : null;
 
     const row = [
       ts,
       data.handNumber,
-      p(0)?.name ?? '', p(0)?.role ?? '', p(0)?.startStack ?? '', p(0)?.endStack ?? '',
-      p(1)?.name ?? '', p(1)?.role ?? '', p(1)?.startStack ?? '', p(1)?.endStack ?? '',
+      gabe?.startStack  ?? '', gabe?.endStack  ?? '',
+      liana?.startStack ?? '', liana?.endStack ?? '',
       data.winnerName,
       escape(data.resultMessage),
-      statsColumns(0),
-      statsColumns(1),
+      statsColumns(gabeSt),
+      statsColumns(lianaSt),
     ].join(',');
 
     fs.appendFileSync(CSV_PATH, row + '\n');

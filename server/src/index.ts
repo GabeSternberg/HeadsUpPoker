@@ -10,6 +10,7 @@ import fs from 'fs';
 
 import { setupSocketHandlers } from './socketHandler';
 import { initCSV, CSV_PATH } from './statsLogger';
+import { initClassifierCSV, CLASSIFIER_CSV_PATH } from './classifierLogger';
 
 const PORT = process.env.PORT || 3001;
 
@@ -32,6 +33,7 @@ const io = new Server(httpServer, {
 });
 
 initCSV();
+initClassifierCSV();
 setupSocketHandlers(io);
 
 app.get('/', (_req, res) => {
@@ -52,6 +54,22 @@ app.get('/export/hands.csv', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="poker_hands.csv"');
   fs.createReadStream(CSV_PATH).pipe(res);
+});
+
+// Download classifier decisions CSV
+app.get('/export/classifier.csv', (req, res) => {
+  const key = process.env.EXPORT_KEY;
+  if (key && req.query.key !== key) {
+    res.status(401).send('Unauthorized');
+    return;
+  }
+  if (!fs.existsSync(CLASSIFIER_CSV_PATH)) {
+    res.status(404).send('No data yet');
+    return;
+  }
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="classifier_decisions.csv"');
+  fs.createReadStream(CLASSIFIER_CSV_PATH).pipe(res);
 });
 
 httpServer.listen(PORT, () => {

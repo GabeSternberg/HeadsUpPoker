@@ -16,6 +16,7 @@ import { Deck, Card, cardToString } from './deck';
 import { BettingState, getLegalActions, processAction, newStreetBetting, PlayerAction } from './betting';
 import { evaluateHand, compareHands, HandResult } from './handEvaluator';
 import { appendHandRow, StatsLogData } from './statsLogger';
+import { PendingDecision, flushDecisions } from './classifierLogger';
 
 export type Round = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type GameMode = 'headsup' | 'unlimited';
@@ -107,6 +108,10 @@ export interface HandStatsContext {
   foldedToCbet: boolean[];
   postflopBetsRaises: number[];
   postflopCalls: number[];
+  // Classifier tracking
+  streetRaiseCount: number;
+  prevBetPctPot: number;
+  pendingDecisions: PendingDecision[];
 }
 
 function emptyStats(): PlayerStats {
@@ -223,6 +228,67 @@ function countActive(hand: HandState): number {
   return hand.participants.filter(s => !hand.playerFolded[s] && !hand.playerAllIn[s]).length;
 }
 
+// --- Board texture helpers ---
+
+function boardHighestRank(cards: Card[]): number {
+  if (cards.length === 0) return 0;
+  return Math.max(...cards.map(c => c.rank));
+}
+
+function boardIsPaired(cards: Card[]): boolean {
+  const ranks = cards.map(c => c.rank);
+  return ranks.some((r, i) => ranks.indexOf(r) !== i);
+}
+
+function boardNumSuited(cards: Card[]): number {
+  if (cards.length === 0) return 0;
+  const counts: Record<string, number> = {};
+  for (const c of cards) counts[c.suit] = (counts[c.suit] || 0) + 1;
+  return Math.max(...Object.values(counts));
+}
+
+function boardNumConnected(cards: Card[]): number {
+  let count = 0;
+  for (let i = 0; i < cards.length; i++) {
+    for (let j = i + 1; j < cards.length; j++) {
+      if (Math.abs(cards[i].rank - cards[j].rank) <= 2) count++;
+    }
+  }
+  return count;
+}
+
+function boardHasFlushDraw(cards: Card[]): boolean {
+  return boardNumSuited(cards) >= 2;
+}
+
+function boardHasStraightDraw(cards: Card[]): boolean {
+  if (cards.length < 2) return false;
+  const ranks = cards.map(c => c.rank);
+  for (let i = 0; i < ranks.length; i++) {
+    for (let j = i + 1; j < ranks.length; j++) {
+      if (Math.abs(ranks[i] - ranks[j]) <= 4) return true;
+    }
+  }
+  return false;
+}
+
+// Compute opponent cumulative HUD stats relative to a given seat.
+function getOpponentStats(room: Room, seat: number) {
+  const hand = room.hand!;
+  const oppSeat = hand.participants.find(s => s !== seat) ?? seat;
+  const st = room.stats[oppSeat];
+  if (!st || st.handsPlayed === 0) return { vpip: 0, pfr: 0, af: 0, foldToCbet: 0, sampleSize: 0 };
+  const vpip = st.vpipOpportunities > 0 ? st.vpipCount / st.vpipOpportunities : 0;
+  const pfr  = st.pfrOpportunities  > 0 ? st.pfrCount  / st.pfrOpportunities  : 0;
+  const af   = st.postflopCalls === 0
+    ? (st.postflopBetsRaises > 0 ? 99 : 0)
+    : st.postflopBetsRaises / st.postflopCalls;
+  const foldToCbet = st.foldToCbetOpportunities > 0
+    ? st.foldToCbetCount / st.foldToCbetOpportunities
+    : 0;
+  return { vpip, pfr, af, foldToCbet, sampleSize: st.handsPlayed };
+}
+
 // --- Start a new hand ---
 
 export function startHand(room: Room): void {
@@ -282,6 +348,9 @@ export function startHand(room: Room): void {
     foldedToCbet: new Array(n).fill(false),
     postflopBetsRaises: new Array(n).fill(0),
     postflopCalls: new Array(n).fill(0),
+    streetRaiseCount: 0,
+    prevBetPctPot: 0,
+    pendingDecisions: [],
   };
 
   // Record starting stacks before blinds (for side pot calculation)
@@ -393,6 +462,63 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
   if (hand.playerFolded[playerIndex]) return { valid: false, error: 'You have folded' };
 
   const bettingState = getBettingState(room);
+
+  // Capture classifier decision features BEFORE action is processed
+  const captureCtx = room.handStatsCtx;
+  if (captureCtx && room.avatarMode) {
+    const role = room.avatarAssignment[playerIndex];
+    if (role === 'G' || role === 'L') {
+      const community = hand.communityCards;
+      const pot = bettingState.pot;
+      const bb = room.settings.bigBlind;
+      const oppSeat = hand.participants.find(s => s !== playerIndex) ?? playerIndex;
+      const effectiveStack = Math.min(
+        bettingState.playerStacks[playerIndex],
+        bettingState.playerStacks[oppSeat],
+      );
+      const spr = pot > 0 ? effectiveStack / pot : 99;
+      const inPosition = hand.round === 'preflop'
+        ? playerIndex === hand.bbIndex
+        : playerIndex === hand.dealerIndex;
+      const opp = getOpponentStats(room, playerIndex);
+
+      captureCtx.pendingDecisions.push({
+        handNumber: room.handNumber,
+        street: hand.round,
+        playerRole: role,
+        playerSeat: playerIndex,
+        action: action.type,
+        amount: action.amount ?? 0,
+        inPosition,
+        effectiveStackBB: effectiveStack / bb,
+        spr,
+        wasPreflopAggressor: captureCtx.preflopAggressor === playerIndex,
+        facingBet: bettingState.currentBet > 0,
+        betSizePctPot: pot > 0 ? bettingState.currentBet / pot : 0,
+        previousBetPctPot: captureCtx.prevBetPctPot,
+        numRaisesThisStreet: captureCtx.streetRaiseCount,
+        potSizeBB: pot / bb,
+        highestCardRank: boardHighestRank(community),
+        isPairedBoard: boardIsPaired(community),
+        numSuitedCardsOnBoard: boardNumSuited(community),
+        numConnectedCardsOnBoard: boardNumConnected(community),
+        hasFlushDraw: boardHasFlushDraw(community),
+        hasStraightDraw: boardHasStraightDraw(community),
+        opponentVPIP: opp.vpip,
+        opponentPFR: opp.pfr,
+        opponentAF: opp.af,
+        opponentFoldToCBet: opp.foldToCbet,
+        opponentSampleSize: opp.sampleSize,
+      });
+
+      // Update raise counters so next player's capture sees them
+      if (action.type === 'raise') {
+        captureCtx.prevBetPctPot = pot > 0 ? bettingState.currentBet / pot : 0;
+        captureCtx.streetRaiseCount++;
+      }
+    }
+  }
+
   const result = processAction(bettingState, playerIndex, action);
 
   if (!result.valid) return { valid: false, error: result.error };
@@ -572,6 +698,12 @@ function advanceRound(room: Room): void {
 
   hand.round = nextRound;
 
+  // Reset per-street classifier counters
+  if (room.handStatsCtx) {
+    room.handStatsCtx.streetRaiseCount = 0;
+    room.handStatsCtx.prevBetPctPot = 0;
+  }
+
   // Stats: mark sawFlop and c-bet opportunity
   if (nextRound === 'flop' && room.handStatsCtx) {
     const sctx = room.handStatsCtx;
@@ -709,7 +841,12 @@ function calculateSidePots(room: Room): SidePot[] {
 }
 
 /** Commit per-hand stat context into cumulative counters and log to CSV. */
-function commitHandStats(room: Room, isShowdown: boolean, showdownWinners: number[]): void {
+function commitHandStats(
+  room: Room,
+  isShowdown: boolean,
+  showdownWinners: number[],
+  handDescriptions?: Record<number, string>,
+): void {
   const ctx = room.handStatsCtx;
   if (!ctx) return;
   const hand = room.hand!;
@@ -756,6 +893,28 @@ function commitHandStats(room: Room, isShowdown: boolean, showdownWinners: numbe
     for (const w of showdownWinners) {
       if (room.stats[w]) room.stats[w].wsdCount++;
     }
+  }
+
+  // Classifier decision logging (avatar mode only)
+  if (room.avatarMode && ctx.pendingDecisions.length > 0) {
+    // Gabe: always log. Liana: only at showdown.
+    const decisionsToLog = ctx.pendingDecisions.filter(
+      d => d.playerRole === 'G' || (d.playerRole === 'L' && isShowdown),
+    );
+
+    const winnerSeats = isShowdown ? showdownWinners : (hand.winner !== null ? [hand.winner] : []);
+    const holeCardsByRole: Record<string, Card[]> = {};
+    const handRankByRole: Record<string, string> = {};
+    const wonByRole: Record<string, boolean> = {};
+    for (const s of hand.participants) {
+      const role = room.avatarAssignment[s];
+      if (role) {
+        holeCardsByRole[role] = room.players[s]?.holeCards ?? [];
+        handRankByRole[role] = handDescriptions?.[s] ?? '';
+        wonByRole[role] = winnerSeats.includes(s);
+      }
+    }
+    flushDecisions(decisionsToLog, holeCardsByRole, handRankByRole, wonByRole);
   }
 
   // CSV logging (avatar mode only)
@@ -853,7 +1012,12 @@ function doShowdown(room: Room): void {
     // Split: all non-folded participants are winners
     showdownWinners.push(...hand.participants.filter(s => !hand.playerFolded[s]));
   }
-  commitHandStats(room, true, showdownWinners);
+
+  // Build per-seat hand description for classifier
+  const handDescriptions: Record<number, string> = {};
+  for (const r of results) handDescriptions[r.seat] = r.result.description;
+
+  commitHandStats(room, true, showdownWinners, handDescriptions);
 
   // Save showdown data for "last showdown" preview
   room.lastShowdown = {

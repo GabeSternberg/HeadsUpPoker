@@ -894,6 +894,20 @@ h1 {
   overflow-y: auto;
 }
 
+.last-hand-my-cards {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 4px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+}
+.last-hand-label {
+  font-size: 0.78rem;
+  color: #aaa;
+  white-space: nowrap;
+}
+
 .last-hand-result {
   font-size: 0.9rem;
   font-weight: 600;

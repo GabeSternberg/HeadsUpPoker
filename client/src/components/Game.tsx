@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GameState, PlayerInfo, LastShowdownInfo } from '../types';
+import { GameState, PlayerInfo, LastShowdownInfo, Card } from '../types';
 import { CardDisplay, CardBack } from './Card';
 import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
@@ -101,20 +101,55 @@ function PlayerArea({
   );
 }
 
-function LastFoldedPreview({ data }: { data: { actionLog: string[] } }) {
+function buildNameMap(gameState: GameState): Record<string, string> {
+  if (!gameState.avatarMode) return {};
+  const map: Record<string, string> = {};
+  gameState.players.forEach((p, i) => {
+    if (!p) return;
+    const role = gameState.avatarAssignment[i];
+    if (role === 'G') map[p.name] = 'Gabe';
+    else if (role === 'L') map[p.name] = 'Liana';
+  });
+  return map;
+}
+
+function resolveEntry(entry: string, nameMap: Record<string, string>): string {
+  let s = entry;
+  for (const [raw, display] of Object.entries(nameMap)) s = s.split(raw).join(display);
+  return s;
+}
+
+function LastFoldedPreview({ data, gameState }: { data: { actionLog: string[]; myHoleCards: Card[] }; gameState: GameState }) {
+  const nameMap = buildNameMap(gameState);
   return (
     <div className="last-hand-popup">
       <div className="last-hand-title">Last Hand</div>
+      {data.myHoleCards.length > 0 && (
+        <div className="last-hand-my-cards">
+          <span className="last-hand-label">Your hand:</span>
+          <div className="last-hand-cards">
+            {data.myHoleCards.map((card, i) => <CardDisplay key={i} card={card} />)}
+          </div>
+        </div>
+      )}
       <div className="last-fold-log">
         {data.actionLog.map((entry, i) => (
-          <div key={i} className={`log-entry ${entry.startsWith('---') ? 'log-round' : ''}`}>{entry}</div>
+          <div key={i} className={`log-entry ${entry.startsWith('---') ? 'log-round' : ''}`}>
+            {resolveEntry(entry, nameMap)}
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-function LastHandPreview({ data }: { data: LastShowdownInfo }) {
+function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameState: GameState }) {
+  const seatName = (seat: number, fallback: string) => {
+    if (!gameState.avatarMode) return fallback;
+    const role = gameState.avatarAssignment[seat];
+    return role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : fallback;
+  };
+  const nameMap = buildNameMap(gameState);
   return (
     <div className="last-hand-popup">
       <div className="last-hand-title">Last Showdown</div>
@@ -126,7 +161,7 @@ function LastHandPreview({ data }: { data: LastShowdownInfo }) {
       <div className="last-hand-players">
         {data.playerHands.map((ph) => (
           <div key={ph.seat} className="last-hand-player">
-            <span className="last-hand-name">{ph.name}</span>
+            <span className="last-hand-name">{seatName(ph.seat, ph.name)}</span>
             <div className="last-hand-cards">
               {ph.holeCards.map((card, i) => (
                 <CardDisplay key={i} card={card} />
@@ -135,7 +170,7 @@ function LastHandPreview({ data }: { data: LastShowdownInfo }) {
           </div>
         ))}
       </div>
-      <div className="last-hand-result">{data.resultMessage}</div>
+      <div className="last-hand-result">{resolveEntry(data.resultMessage, nameMap)}</div>
     </div>
   );
 }
@@ -221,14 +256,14 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         {gameState.lastShowdown && !hand?.showdown && (
           <div className="last-hand-trigger">
             <span className="last-hand-btn">Last Showdown</span>
-            <LastHandPreview data={gameState.lastShowdown} />
+            <LastHandPreview data={gameState.lastShowdown} gameState={gameState} />
           </div>
         )}
         {/* Last folded hand hover button */}
         {gameState.lastFoldedHand && !hand?.showdown && (
           <div className="last-hand-trigger">
             <span className="last-hand-btn">Last Hand</span>
-            <LastFoldedPreview data={gameState.lastFoldedHand} />
+            <LastFoldedPreview data={gameState.lastFoldedHand} gameState={gameState} />
           </div>
         )}
       </div>

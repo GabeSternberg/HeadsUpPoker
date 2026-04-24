@@ -75,6 +75,6 @@ export interface GameState {
   avatarAssignment: (string | null)[];
   handNumber: number;
   lastShowdown: LastShowdownInfo | null;
-  lastFoldedHand: { actionLog: string[] } | null;
+  lastFoldedHand: { actionLog: string[]; myHoleCards: Card[] } | null;
   stats: PlayerStatsRaw[];
 }

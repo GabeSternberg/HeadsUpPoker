@@ -141,7 +141,7 @@ export interface Room {
   avatarAssignment: (string | null)[];
   handNumber: number;
   lastShowdown: LastShowdown | null;
-  lastFoldedHand: { actionLog: string[] } | null;
+  lastFoldedHand: { actionLog: string[]; playerHoleCards: { seat: number; holeCards: Card[] }[] } | null;
   stats: PlayerStats[];
   handStatsCtx: HandStatsContext | null;
 }
@@ -633,7 +633,13 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
     room.players[winnerIdx]!.stack += hand.pot;
     hand.pot = 0;
     room.actionLog.push(hand.resultMessage);
-    room.lastFoldedHand = { actionLog: [...room.actionLog] };
+    room.lastFoldedHand = {
+      actionLog: [...room.actionLog],
+      playerHoleCards: hand.participants.map(s => ({
+        seat: s,
+        holeCards: [...(room.players[s]?.holeCards ?? [])],
+      })),
+    };
     commitHandStats(room, false, []);
     return { valid: true };
   }
@@ -1084,7 +1090,10 @@ export function getClientState(room: Room, playerIndex: number) {
     avatarAssignment: room.avatarAssignment,
     handNumber: room.handNumber,
     lastShowdown: room.lastShowdown,
-    lastFoldedHand: room.lastFoldedHand,
+    lastFoldedHand: room.lastFoldedHand ? {
+      actionLog: room.lastFoldedHand.actionLog,
+      myHoleCards: room.lastFoldedHand.playerHoleCards.find(p => p.seat === playerIndex)?.holeCards ?? [],
+    } : null,
     stats: room.stats,
   };
 }

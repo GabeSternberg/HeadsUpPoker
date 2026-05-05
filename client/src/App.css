@@ -1357,3 +1357,12 @@ body:has(.mobile-ui) h1 {
   border-radius: 8px;
   padding: 10px 14px;
 }
+
+.vc-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.vc-sb { background: #e67e22; color: #000; }
+.vc-bb { background: #3498db; color: #fff; }

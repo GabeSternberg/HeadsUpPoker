@@ -56,6 +56,8 @@ export default function VirtualCards({ gameState, myIndex, onNextPhase, onNextHa
           return (
             <div key={i} className={`vc-player ${isMe ? 'vc-me' : ''}`}>
               <span className="vc-player-name">{displayName}{isMe ? ' (You)' : ''}</span>
+              {i === vc.sbSeat && <span className="vc-badge vc-sb">SB</span>}
+              {i === vc.bbSeat && <span className="vc-badge vc-bb">BB</span>}
               {isMe && vc.myCards.length > 0 && (
                 <div className="vc-my-cards">
                   {vc.myCards.map((card, ci) => <CardDisplay key={ci} card={card} />)}

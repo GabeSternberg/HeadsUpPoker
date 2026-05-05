@@ -59,6 +59,8 @@ export interface VCStateInfo {
   phase: 'dealt' | 'flop' | 'turn' | 'river';
   myCards: Card[];
   communityCards: Card[];
+  sbSeat: number;
+  bbSeat: number;
 }
 
 export interface LastShowdownInfo {

@@ -69,6 +69,8 @@ export interface VCState {
   deck: Deck;
   playerCards: Record<number, Card[]>; // seat → 2 hole cards
   communityCards: Card[];
+  sbSeat: number;
+  bbSeat: number;
 }
 
 export interface LastShowdown {
@@ -153,6 +155,7 @@ export interface Room {
   handStatsCtx: HandStatsContext | null;
   vc: VCState | null;
   vcPending: string[]; // socket IDs connected but not yet seated (VC mode)
+  vcDealerIndex: number; // tracks dealer button for SB/BB cycling
 }
 
 export function createRoom(): Room {
@@ -174,6 +177,7 @@ export function createRoom(): Room {
     handStatsCtx: null,
     vc: null,
     vcPending: [],
+    vcDealerIndex: -1, // -1 = not yet set; randomised on first deal
   };
 }
 
@@ -185,13 +189,29 @@ export function vcDeal(room: Room): void {
     .filter(i => i >= 0);
   if (seated.length === 0) return;
 
+  // Advance dealer button (random on first deal, then cycle)
+  if (room.vcDealerIndex === -1 || !seated.includes(room.vcDealerIndex)) {
+    room.vcDealerIndex = seated[Math.floor(Math.random() * seated.length)];
+  } else {
+    const di = seated.indexOf(room.vcDealerIndex);
+    room.vcDealerIndex = seated[(di + 1) % seated.length];
+  }
+
+  // Heads-up: dealer = SB, other = BB. 3+ players: SB = next after dealer, BB = next after SB.
+  const dealerPos = seated.indexOf(room.vcDealerIndex);
+  const sbSeat = seated.length === 2
+    ? room.vcDealerIndex
+    : seated[(dealerPos + 1) % seated.length];
+  const sbPos = seated.indexOf(sbSeat);
+  const bbSeat = seated[(sbPos + 1) % seated.length];
+
   const deck = new Deck();
   const playerCards: Record<number, Card[]> = {};
   for (const s of seated) {
     playerCards[s] = deck.deal(2);
   }
 
-  room.vc = { phase: 'dealt', deck, playerCards, communityCards: [] };
+  room.vc = { phase: 'dealt', deck, playerCards, communityCards: [], sbSeat, bbSeat };
 
   // Reset ready flags
   for (const p of room.players) if (p) p.ready = false;
@@ -1150,6 +1170,8 @@ export function getClientState(room: Room, playerIndex: number) {
       phase: room.vc.phase,
       myCards: room.vc.playerCards[playerIndex] ?? [],
       communityCards: room.vc.communityCards,
+      sbSeat: room.vc.sbSeat,
+      bbSeat: room.vc.bbSeat,
     } : null,
   };
 }

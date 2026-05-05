@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { GameState } from './types';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
+import VirtualCards from './components/VirtualCards';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -96,9 +97,24 @@ function App() {
     socket.emit('kickPlayer', { targetIndex });
   }, [socket]);
 
-  const handleSetMode = useCallback((mode: 'headsup' | 'unlimited') => {
+  const handleSetMode = useCallback((mode: 'headsup' | 'unlimited' | 'virtualcards') => {
     if (!socket) return;
     socket.emit('setMode', { mode });
+  }, [socket]);
+
+  const handleJoinTable = useCallback(() => {
+    if (!socket) return;
+    socket.emit('joinTable');
+  }, [socket]);
+
+  const handleVCNextPhase = useCallback(() => {
+    if (!socket) return;
+    socket.emit('vcNextPhase');
+  }, [socket]);
+
+  const handleVCNextHand = useCallback(() => {
+    if (!socket) return;
+    socket.emit('vcNextHand');
   }, [socket]);
 
   const handleRebuy = useCallback(() => {
@@ -145,13 +161,65 @@ function App() {
     return <div className="app"><div className="loading">Connecting to server...</div></div>;
   }
 
-  const title = gameState.mode === 'unlimited' ? 'Poker' : 'Heads-Up Poker';
+  const isVC = gameState.mode === 'virtualcards';
+  const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Poker' : 'Heads-Up Poker';
+
+  // VC pending: player connected but hasn't clicked "Join Table" yet
+  if (isVC && gameState.isPending) {
+    return (
+      <div className="app">
+        <h1>{title}</h1>
+        {error && <div className="error">{error}</div>}
+        <div className="vc-join-screen">
+          <div className="vc-join-card">
+            <h2>Virtual Card Table</h2>
+            <p className="vc-join-desc">
+              No physical deck needed — everyone sees their own cards on their device.
+            </p>
+            {gameState.players.some(p => p) && (
+              <div className="vc-join-players">
+                <span className="vc-join-label">Already at the table:</span>
+                {gameState.players.filter(p => p).map((p, i) => (
+                  <span key={i} className="vc-join-player-tag">{p!.name}</span>
+                ))}
+              </div>
+            )}
+            <button className="btn vc-btn-join" onClick={handleJoinTable}>
+              Join Table
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
       <h1>{title}</h1>
       {error && <div className="error">{error}</div>}
-      {!gameState.gameStarted ? (
+
+      {/* VC mode: show table when cards are dealt, lobby otherwise */}
+      {isVC && gameState.vcState ? (
+        <VirtualCards
+          gameState={gameState}
+          myIndex={myIndex}
+          onNextPhase={handleVCNextPhase}
+          onNextHand={handleVCNextHand}
+        />
+      ) : isVC ? (
+        /* VC lobby — seated but waiting to deal */
+        <Lobby
+          gameState={gameState}
+          myIndex={myIndex}
+          onUpdateSettings={handleUpdateSettings}
+          onToggleReady={handleToggleReady}
+          onSetAvatar={handleSetAvatar}
+          onSetMode={handleSetMode}
+          onKickPlayer={handleKickPlayer}
+          uiMode={uiMode}
+          onSetUiMode={handleSetUiMode}
+        />
+      ) : !gameState.gameStarted ? (
         <>
           <Lobby
             gameState={gameState}

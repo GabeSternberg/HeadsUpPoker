@@ -55,6 +55,12 @@ export interface PlayerStatsRaw {
   wsdCount: number;
 }
 
+export interface VCStateInfo {
+  phase: 'dealt' | 'flop' | 'turn' | 'river';
+  myCards: Card[];
+  communityCards: Card[];
+}
+
 export interface LastShowdownInfo {
   playerHands: { seat: number; name: string; holeCards: Card[] }[];
   communityCards: Card[];
@@ -66,7 +72,7 @@ export interface GameState {
   settings: { startingSum: number; bigBlind: number; uiMode: 'mobile' | 'pc' };
   gameStarted: boolean;
   matchOver: boolean;
-  mode: 'headsup' | 'unlimited';
+  mode: 'headsup' | 'unlimited' | 'virtualcards';
   hand: HandInfo | null;
   legalActions: LegalActions | null;
   actionLog: string[];
@@ -77,4 +83,6 @@ export interface GameState {
   lastShowdown: LastShowdownInfo | null;
   lastFoldedHand: { actionLog: string[]; myHoleCards: Card[] } | null;
   stats: PlayerStatsRaw[];
+  vcState: VCStateInfo | null;
+  isPending: boolean;
 }

@@ -19,7 +19,7 @@ import { appendHandRow, StatsLogData } from './statsLogger';
 import { PendingDecision, flushDecisions } from './classifierLogger';
 
 export type Round = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
-export type GameMode = 'headsup' | 'unlimited';
+export type GameMode = 'headsup' | 'unlimited' | 'virtualcards';
 
 export interface PlayerState {
   id: string;
@@ -62,6 +62,13 @@ export interface Settings {
   startingSum: number;
   bigBlind: number;
   uiMode: 'mobile' | 'pc';
+}
+
+export interface VCState {
+  phase: 'dealt' | 'flop' | 'turn' | 'river';
+  deck: Deck;
+  playerCards: Record<number, Card[]>; // seat → 2 hole cards
+  communityCards: Card[];
 }
 
 export interface LastShowdown {
@@ -144,6 +151,8 @@ export interface Room {
   lastFoldedHand: { actionLog: string[]; playerHoleCards: { seat: number; holeCards: Card[] }[] } | null;
   stats: PlayerStats[];
   handStatsCtx: HandStatsContext | null;
+  vc: VCState | null;
+  vcPending: string[]; // socket IDs connected but not yet seated (VC mode)
 }
 
 export function createRoom(): Room {
@@ -163,7 +172,48 @@ export function createRoom(): Room {
     lastFoldedHand: null,
     stats: [emptyStats(), emptyStats()],
     handStatsCtx: null,
+    vc: null,
+    vcPending: [],
   };
+}
+
+// --- Virtual Cards mode ---
+
+export function vcDeal(room: Room): void {
+  const seated = room.players
+    .map((p, i) => (p && p.connected) ? i : -1)
+    .filter(i => i >= 0);
+  if (seated.length === 0) return;
+
+  const deck = new Deck();
+  const playerCards: Record<number, Card[]> = {};
+  for (const s of seated) {
+    playerCards[s] = deck.deal(2);
+  }
+
+  room.vc = { phase: 'dealt', deck, playerCards, communityCards: [] };
+
+  // Reset ready flags
+  for (const p of room.players) if (p) p.ready = false;
+}
+
+export function vcNextPhase(room: Room): void {
+  if (!room.vc) return;
+  switch (room.vc.phase) {
+    case 'dealt':
+      room.vc.communityCards = room.vc.deck.deal(3);
+      room.vc.phase = 'flop';
+      break;
+    case 'flop':
+      room.vc.communityCards.push(...room.vc.deck.deal(1));
+      room.vc.phase = 'turn';
+      break;
+    case 'turn':
+      room.vc.communityCards.push(...room.vc.deck.deal(1));
+      room.vc.phase = 'river';
+      break;
+    // river: nothing
+  }
 }
 
 // --- Seat navigation helpers ---
@@ -1095,6 +1145,38 @@ export function getClientState(room: Room, playerIndex: number) {
       myHoleCards: room.lastFoldedHand.playerHoleCards.find(p => p.seat === playerIndex)?.holeCards ?? [],
     } : null,
     stats: room.stats,
+    isPending: false,
+    vcState: room.mode === 'virtualcards' && room.vc ? {
+      phase: room.vc.phase,
+      myCards: room.vc.playerCards[playerIndex] ?? [],
+      communityCards: room.vc.communityCards,
+    } : null,
+  };
+}
+
+/** Minimal state sent to players who have connected but not yet joined (VC mode). */
+export function getVCViewerState(room: Room) {
+  return {
+    isPending: true,
+    mode: room.mode,
+    players: room.players.map(p => p
+      ? { name: p.name, ready: p.ready, connected: p.connected,
+          stack: 0, holeCards: null, isDealer: false, isSB: false, isBB: false, folded: false }
+      : null),
+    settings: room.settings,
+    gameStarted: false,
+    matchOver: false,
+    hand: null,
+    legalActions: null,
+    actionLog: [],
+    myIndex: -1,
+    avatarMode: room.avatarMode,
+    avatarAssignment: room.avatarAssignment,
+    handNumber: room.handNumber,
+    lastShowdown: null,
+    lastFoldedHand: null,
+    stats: [],
+    vcState: null,
   };
 }
 

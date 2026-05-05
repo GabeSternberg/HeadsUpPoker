@@ -7,7 +7,7 @@ interface LobbyProps {
   onUpdateSettings: (settings: { startingSum?: number; bigBlind?: number }) => void;
   onToggleReady: () => void;
   onSetAvatar: (playerIndex: number, role: 'L' | 'G') => void;
-  onSetMode: (mode: 'headsup' | 'unlimited') => void;
+  onSetMode: (mode: 'headsup' | 'unlimited' | 'virtualcards') => void;
   onKickPlayer: (targetIndex: number) => void;
   uiMode: 'mobile' | 'pc';
   onSetUiMode: (mode: 'mobile' | 'pc') => void;
@@ -26,8 +26,9 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
 
   const smallBlind = bigBlind / 2;
 
+  const isVC = gameState.mode === 'virtualcards';
   const connectedPlayers = gameState.players.filter(p => p && p.connected);
-  const minPlayers = 2;
+  const minPlayers = isVC ? 1 : 2;
   const canReady = connectedPlayers.length >= minPlayers;
 
   const handleStartingSumChange = (val: string) => {
@@ -87,6 +88,12 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
         >
           Unlimited
         </button>
+        <button
+          className={`btn btn-mode ${gameState.mode === 'virtualcards' ? 'active' : ''}`}
+          onClick={() => onSetMode('virtualcards')}
+        >
+          Virtual Cards
+        </button>
       </div>
 
       <div className="players-list">
@@ -138,7 +145,13 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
         })}
       </div>
 
-      <div className="settings">
+      {isVC && (
+        <p className="vc-lobby-desc">
+          Each player will see only their own cards. Click Ready when everyone has joined.
+        </p>
+      )}
+
+      {!isVC && <div className="settings">
         <h3>Game Settings</h3>
         <div className="setting-row">
           <label>Starting Chips:</label>
@@ -183,18 +196,22 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
             >PC</button>
           </div>
         </div>
-      </div>
+      </div>}
 
       <button
         className={`ready-button ${gameState.players[myIndex]?.ready ? 'unready' : ''}`}
         onClick={onToggleReady}
         disabled={!canReady}
       >
-        {gameState.players[myIndex]?.ready ? 'UNREADY' : 'READY'}
+        {gameState.players[myIndex]?.ready
+          ? (isVC ? 'UNREADY' : 'UNREADY')
+          : (isVC ? 'READY TO DEAL' : 'READY')}
       </button>
 
       {!canReady && (
-        <p className="waiting-message">Waiting for more players to join...</p>
+        <p className="waiting-message">
+          {isVC ? 'Join the table to deal cards...' : 'Waiting for more players to join...'}
+        </p>
       )}
     </div>
   );

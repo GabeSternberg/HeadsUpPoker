@@ -3,7 +3,7 @@
  */
 
 import { Server, Socket } from 'socket.io';
-import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, PlayerState, GameMode } from './gameState';
+import { Room, createRoom, startHand, handleAction, getClientState, getVCViewerState, checkMatchOver, PlayerState, GameMode, vcDeal, vcNextPhase } from './gameState';
 
 export function setupSocketHandlers(io: Server): void {
   let room: Room = createRoom();
@@ -14,6 +14,10 @@ export function setupSocketHandlers(io: Server): void {
       if (player && player.connected) {
         io.to(player.id).emit('gameState', getClientState(room, i));
       }
+    }
+    // Also send viewer state to VC pending players
+    for (const pendingId of room.vcPending) {
+      io.to(pendingId).emit('gameState', getVCViewerState(room));
     }
   }
 
@@ -53,64 +57,106 @@ export function setupSocketHandlers(io: Server): void {
 
     let playerIndex = -1;
 
-    if (room.mode === 'headsup') {
-      // Heads-up: max 2 slots
-      for (let i = 0; i < 2; i++) {
-        if (room.players[i] === null) {
-          playerIndex = i;
-          break;
-        }
-        if (!room.players[i]!.connected) {
-          playerIndex = i;
-          break;
-        }
-      }
+    if (room.mode === 'virtualcards') {
+      // VC mode: player must explicitly join — add to pending list
+      room.vcPending.push(socket.id);
+      socket.emit('gameState', getVCViewerState(room));
+      broadcastState();
     } else {
-      // Unlimited: find empty slot or add new
-      for (let i = 0; i < room.players.length; i++) {
-        if (room.players[i] === null) {
-          playerIndex = i;
-          break;
+      if (room.mode === 'headsup') {
+        for (let i = 0; i < 2; i++) {
+          if (room.players[i] === null) { playerIndex = i; break; }
+          if (!room.players[i]!.connected) { playerIndex = i; break; }
         }
-        if (!room.players[i]!.connected && !room.gameStarted) {
-          playerIndex = i;
-          break;
+      } else {
+        for (let i = 0; i < room.players.length; i++) {
+          if (room.players[i] === null) { playerIndex = i; break; }
+          if (!room.players[i]!.connected && !room.gameStarted) { playerIndex = i; break; }
+        }
+        if (playerIndex === -1 && !room.gameStarted) {
+          playerIndex = room.players.length;
+          room.players.push(null);
+          room.avatarAssignment.push(null);
         }
       }
-      if (playerIndex === -1 && !room.gameStarted) {
-        // Add new slot
-        playerIndex = room.players.length;
+
+      if (playerIndex === -1) {
+        socket.emit('error', { message: 'Room is full' });
+        socket.disconnect();
+        return;
+      }
+
+      const isReconnect = room.players[playerIndex] !== null;
+      room.players[playerIndex] = {
+        id: socket.id,
+        name: `Player ${playerIndex + 1}`,
+        ready: isReconnect ? room.players[playerIndex]!.ready : false,
+        connected: true,
+        stack: isReconnect ? room.players[playerIndex]!.stack : room.settings.startingSum,
+        holeCards: isReconnect ? room.players[playerIndex]!.holeCards : [],
+        seatIndex: playerIndex,
+      };
+
+      socket.emit('assignPlayer', { index: playerIndex, name: `Player ${playerIndex + 1}` });
+      broadcastState();
+    }
+
+    // Join table (VC mode: move from pending to seated)
+    socket.on('joinTable', () => {
+      if (room.mode !== 'virtualcards') return;
+      if (!room.vcPending.includes(socket.id)) return;
+
+      // Assign a seat
+      let newIndex = room.players.findIndex(p => p === null);
+      if (newIndex === -1) {
+        newIndex = room.players.length;
         room.players.push(null);
         room.avatarAssignment.push(null);
       }
-    }
 
-    if (playerIndex === -1) {
-      socket.emit('error', { message: 'Room is full' });
-      socket.disconnect();
-      return;
-    }
+      room.players[newIndex] = {
+        id: socket.id,
+        name: `Player ${newIndex + 1}`,
+        ready: false,
+        connected: true,
+        stack: 0,
+        holeCards: [],
+        seatIndex: newIndex,
+      };
 
-    const isReconnect = room.players[playerIndex] !== null;
-    room.players[playerIndex] = {
-      id: socket.id,
-      name: `Player ${playerIndex + 1}`,
-      ready: isReconnect ? room.players[playerIndex]!.ready : false,
-      connected: true,
-      stack: isReconnect ? room.players[playerIndex]!.stack : room.settings.startingSum,
-      holeCards: isReconnect ? room.players[playerIndex]!.holeCards : [],
-      seatIndex: playerIndex,
-    };
+      room.vcPending = room.vcPending.filter(id => id !== socket.id);
+      socket.emit('assignPlayer', { index: newIndex, name: `Player ${newIndex + 1}` });
+      broadcastState();
+    });
 
-    socket.emit('assignPlayer', { index: playerIndex, name: `Player ${playerIndex + 1}` });
-    broadcastState();
+    // VC: advance community card phase
+    socket.on('vcNextPhase', () => {
+      if (room.mode !== 'virtualcards') return;
+      vcNextPhase(room);
+      broadcastState();
+    });
+
+    // VC: deal new hand to all seated players
+    socket.on('vcNextHand', () => {
+      if (room.mode !== 'virtualcards') return;
+      vcDeal(room);
+      broadcastState();
+    });
 
     // Set game mode (only before game starts)
     socket.on('setMode', (data: { mode: GameMode }) => {
       if (room.gameStarted) return;
-      if (data.mode !== 'headsup' && data.mode !== 'unlimited') return;
+      if (!['headsup', 'unlimited', 'virtualcards'].includes(data.mode)) return;
 
       room.mode = data.mode;
+
+      if (data.mode === 'virtualcards') {
+        // Reset any in-progress game, clear vc state
+        room.vc = null;
+        room.gameStarted = false;
+        broadcastState();
+        return;
+      }
 
       if (data.mode === 'headsup') {
         // Trim to 2 slots
@@ -159,7 +205,20 @@ export function setupSocketHandlers(io: Server): void {
     // Toggle ready
     socket.on('toggleReady', () => {
       const idx = getPlayerIndex(socket.id);
-      if (idx === -1 || room.gameStarted) return;
+      if (idx === -1) return;
+
+      if (room.mode === 'virtualcards') {
+        if (room.vc) return; // cards already dealt; use next hand button
+        room.players[idx]!.ready = !room.players[idx]!.ready;
+        const connected = room.players.filter(p => p && p.connected);
+        if (connected.length >= 1 && connected.every(p => p!.ready)) {
+          vcDeal(room);
+        }
+        broadcastState();
+        return;
+      }
+
+      if (room.gameStarted) return;
 
       room.players[idx]!.ready = !room.players[idx]!.ready;
 
@@ -304,6 +363,14 @@ export function setupSocketHandlers(io: Server): void {
     // Disconnect
     socket.on('disconnect', () => {
       console.log(`Player disconnected: ${socket.id}`);
+
+      // Clean up VC pending list
+      if (room.vcPending.includes(socket.id)) {
+        room.vcPending = room.vcPending.filter(id => id !== socket.id);
+        broadcastState();
+        return;
+      }
+
       const idx = getPlayerIndex(socket.id);
       if (idx === -1) return;
 

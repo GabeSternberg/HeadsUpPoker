@@ -148,6 +148,7 @@ export function setupSocketHandlers(io: Server): void {
       if (room.gameStarted) return;
       if (!['headsup', 'unlimited', 'virtualcards'].includes(data.mode)) return;
 
+      const prevMode = room.mode;
       room.mode = data.mode;
 
       if (data.mode === 'virtualcards') {
@@ -159,7 +160,7 @@ export function setupSocketHandlers(io: Server): void {
       }
 
       // Switching away from VC: auto-seat any pending players
-      if (room.mode === 'virtualcards' && room.vcPending.length > 0) {
+      if (prevMode === 'virtualcards' && room.vcPending.length > 0) {
         for (const pendingId of room.vcPending) {
           let newIndex = room.players.findIndex(p => p === null);
           if (newIndex === -1) {

@@ -1366,3 +1366,10 @@ body:has(.mobile-ui) h1 {
 }
 .vc-sb { background: #e67e22; color: #000; }
 .vc-bb { background: #3498db; color: #fff; }
+
+.vc-join-mode-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 20px;
+}

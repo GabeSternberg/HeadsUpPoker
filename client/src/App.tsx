@@ -165,28 +165,52 @@ function App() {
   const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Poker' : 'Heads-Up Poker';
 
   // VC pending: player connected but hasn't clicked "Join Table" yet
-  if (isVC && gameState.isPending) {
+  if (gameState.isPending) {
     return (
       <div className="app">
         <h1>{title}</h1>
         {error && <div className="error">{error}</div>}
         <div className="vc-join-screen">
           <div className="vc-join-card">
-            <h2>Virtual Card Table</h2>
-            <p className="vc-join-desc">
-              No physical deck needed — everyone sees their own cards on their device.
-            </p>
-            {gameState.players.some(p => p) && (
-              <div className="vc-join-players">
-                <span className="vc-join-label">Already at the table:</span>
-                {gameState.players.filter(p => p).map((p, i) => (
-                  <span key={i} className="vc-join-player-tag">{p!.name}</span>
-                ))}
-              </div>
+            {/* Mode selector — lets pending player switch before joining */}
+            <div className="vc-join-mode-row">
+              <button
+                className={`btn btn-mode ${gameState.mode === 'headsup' ? 'active' : ''}`}
+                onClick={() => handleSetMode('headsup')}
+              >2-Player</button>
+              <button
+                className={`btn btn-mode ${gameState.mode === 'unlimited' ? 'active' : ''}`}
+                onClick={() => handleSetMode('unlimited')}
+              >Unlimited</button>
+              <button
+                className={`btn btn-mode ${gameState.mode === 'virtualcards' ? 'active' : ''}`}
+                onClick={() => handleSetMode('virtualcards')}
+              >Virtual Cards</button>
+            </div>
+
+            {isVC ? (
+              <>
+                <h2>Virtual Card Table</h2>
+                <p className="vc-join-desc">
+                  No physical deck needed — everyone sees their own cards on their device.
+                </p>
+                {gameState.players.some(p => p) && (
+                  <div className="vc-join-players">
+                    <span className="vc-join-label">Already at the table:</span>
+                    {gameState.players.filter(p => p).map((p, i) => (
+                      <span key={i} className="vc-join-player-tag">{p!.name}</span>
+                    ))}
+                  </div>
+                )}
+                <button className="btn vc-btn-join" onClick={handleJoinTable}>
+                  Join Table
+                </button>
+              </>
+            ) : (
+              <p className="vc-join-desc" style={{ marginTop: 12 }}>
+                Switching to {gameState.mode === 'headsup' ? '2-Player' : 'Unlimited'} mode…
+              </p>
             )}
-            <button className="btn vc-btn-join" onClick={handleJoinTable}>
-              Join Table
-            </button>
           </div>
         </div>
       </div>

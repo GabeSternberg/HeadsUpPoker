@@ -158,6 +158,29 @@ export function setupSocketHandlers(io: Server): void {
         return;
       }
 
+      // Switching away from VC: auto-seat any pending players
+      if (room.mode === 'virtualcards' && room.vcPending.length > 0) {
+        for (const pendingId of room.vcPending) {
+          let newIndex = room.players.findIndex(p => p === null);
+          if (newIndex === -1) {
+            newIndex = room.players.length;
+            room.players.push(null);
+            room.avatarAssignment.push(null);
+          }
+          room.players[newIndex] = {
+            id: pendingId,
+            name: `Player ${newIndex + 1}`,
+            ready: false,
+            connected: true,
+            stack: room.settings.startingSum,
+            holeCards: [],
+            seatIndex: newIndex,
+          };
+          io.to(pendingId).emit('assignPlayer', { index: newIndex, name: `Player ${newIndex + 1}` });
+        }
+        room.vcPending = [];
+      }
+
       if (data.mode === 'headsup') {
         // Trim to 2 slots
         while (room.players.length > 2) {

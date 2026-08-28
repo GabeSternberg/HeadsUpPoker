@@ -3,7 +3,7 @@
  */
 
 import { Server, Socket } from 'socket.io';
-import { Room, createRoom, startHand, handleAction, getClientState, getVCViewerState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
+import { Room, createRoom, startHand, handleAction, getClientState, getVCViewerState, getBlockedJoinerState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
 import { syncAvatarPlayerNames } from './displayNames';
 
 export function setupSocketHandlers(io: Server): void {
@@ -60,6 +60,9 @@ export function setupSocketHandlers(io: Server): void {
     // Also send viewer state to VC pending players
     for (const pendingId of room.vcPending) {
       io.to(pendingId).emit('gameState', getVCViewerState(room));
+    }
+    for (const blockedId of room.blockedJoiners) {
+      io.to(blockedId).emit('gameState', getBlockedJoinerState(room));
     }
   }
 
@@ -118,24 +121,29 @@ export function setupSocketHandlers(io: Server): void {
       }
 
       if (playerIndex === -1) {
-        socket.emit('error', { message: 'Room is full' });
-        socket.disconnect();
-        return;
+        if (!room.blockedJoiners.includes(socket.id)) {
+          room.blockedJoiners.push(socket.id);
+        }
+        socket.emit('gameState', getBlockedJoinerState(room));
+      } else {
+        const isReconnect = room.players[playerIndex] !== null;
+        room.players[playerIndex] = {
+          id: socket.id,
+          name: `Player ${playerIndex + 1}`,
+          ready: isReconnect ? room.players[playerIndex]!.ready : false,
+          connected: true,
+          stack: isReconnect ? room.players[playerIndex]!.stack : room.settings.startingSum,
+          holeCards: isReconnect ? room.players[playerIndex]!.holeCards : [],
+          seatIndex: playerIndex,
+        };
+
+        if (room.blockedJoiners.includes(socket.id)) {
+          room.blockedJoiners = room.blockedJoiners.filter(id => id !== socket.id);
+        }
+
+        socket.emit('assignPlayer', { index: playerIndex, name: `Player ${playerIndex + 1}` });
+        broadcastState();
       }
-
-      const isReconnect = room.players[playerIndex] !== null;
-      room.players[playerIndex] = {
-        id: socket.id,
-        name: `Player ${playerIndex + 1}`,
-        ready: isReconnect ? room.players[playerIndex]!.ready : false,
-        connected: true,
-        stack: isReconnect ? room.players[playerIndex]!.stack : room.settings.startingSum,
-        holeCards: isReconnect ? room.players[playerIndex]!.holeCards : [],
-        seatIndex: playerIndex,
-      };
-
-      socket.emit('assignPlayer', { index: playerIndex, name: `Player ${playerIndex + 1}` });
-      broadcastState();
     }
 
     // Join table (VC mode: move from pending to seated)
@@ -302,6 +310,11 @@ export function setupSocketHandlers(io: Server): void {
       const idx = getPlayerIndex(socket.id);
       if (idx === -1) return;
 
+      if (room.paused) {
+        socket.emit('actionError', { message: 'Game is paused' });
+        return;
+      }
+
       const actionType = data.type;
       if (!['fold', 'check', 'call', 'raise'].includes(actionType)) {
         socket.emit('actionError', { message: 'Invalid action type' });
@@ -323,6 +336,7 @@ export function setupSocketHandlers(io: Server): void {
 
     // Next hand (manual trigger)
     socket.on('nextHand', () => {
+      if (room.paused) return;
       if (!room.hand?.handOver) return;
       if (room.matchOver) return;
       startNextHand();
@@ -389,6 +403,62 @@ export function setupSocketHandlers(io: Server): void {
       broadcastState();
     });
 
+    // Pause / resume — protects seats when tabbing out
+    socket.on('togglePause', () => {
+      const idx = getPlayerIndex(socket.id);
+      if (idx === -1) return;
+      if (!room.gameStarted || room.matchOver) return;
+
+      room.paused = !room.paused;
+      room.actionLog.push(room.paused ? '--- Game paused ---' : '--- Game resumed ---');
+      broadcastState();
+    });
+
+    // Admin reset when room is full (stale players blocking the table)
+    socket.on('adminReset', (data: { password: string }) => {
+      if (!room.blockedJoiners.includes(socket.id)) return;
+      if (data.password !== 'admin') {
+        socket.emit('adminResetError', { message: 'Invalid password' });
+        return;
+      }
+
+      for (let i = 0; i < room.players.length; i++) {
+        const p = room.players[i];
+        if (p && isSocketLive(p.id)) {
+          io.to(p.id).emit('kicked', { message: 'Game reset by admin' });
+          io.sockets.sockets.get(p.id)?.disconnect();
+        }
+      }
+
+      const settings = { ...room.settings };
+      const mode = room.mode;
+      const avatarMode = room.avatarMode;
+      const avatarAssignment = room.avatarAssignment.slice(0, 2);
+
+      room = createRoom();
+      room.settings = settings;
+      room.mode = mode;
+      room.avatarMode = avatarMode;
+      room.avatarAssignment = avatarAssignment.length >= 2
+        ? avatarAssignment
+        : [avatarAssignment[0] ?? null, avatarAssignment[1] ?? null];
+      room.blockedJoiners = room.blockedJoiners.filter(id => id !== socket.id);
+
+      room.players[0] = {
+        id: socket.id,
+        name: 'Player 1',
+        ready: false,
+        connected: true,
+        stack: room.settings.startingSum,
+        holeCards: [],
+        seatIndex: 0,
+      };
+      if (room.avatarMode) syncAvatarPlayerNames(room);
+
+      socket.emit('assignPlayer', { index: 0, name: room.players[0]!.name });
+      broadcastState();
+    });
+
     // Kick player (lobby only)
     socket.on('kickPlayer', (data: { targetIndex: number }) => {
       if (room.gameStarted) return;
@@ -406,9 +476,23 @@ export function setupSocketHandlers(io: Server): void {
 
     // Reset match
     socket.on('resetMatch', () => {
+      const settings = { ...room.settings };
+      const mode = room.mode;
+      const avatarMode = room.avatarMode;
+      const avatarAssignment = [...room.avatarAssignment];
+      const blockedJoiners = [...room.blockedJoiners];
+
       room = createRoom();
+      room.settings = settings;
+      room.mode = mode;
+      room.avatarMode = avatarMode;
+      room.avatarAssignment = avatarAssignment.slice(0, 2);
+      while (room.avatarAssignment.length < 2) room.avatarAssignment.push(null);
+      room.blockedJoiners = blockedJoiners;
+
       const sockets = Array.from(io.sockets.sockets.values());
       for (let i = 0; i < sockets.length && i < 2; i++) {
+        if (room.blockedJoiners.includes(sockets[i].id)) continue;
         room.players[i] = {
           id: sockets[i].id,
           name: `Player ${i + 1}`,
@@ -434,6 +518,11 @@ export function setupSocketHandlers(io: Server): void {
         return;
       }
 
+      if (room.blockedJoiners.includes(socket.id)) {
+        room.blockedJoiners = room.blockedJoiners.filter(id => id !== socket.id);
+        return;
+      }
+
       const idx = getPlayerIndex(socket.id);
       if (idx === -1) return;
 
@@ -441,6 +530,11 @@ export function setupSocketHandlers(io: Server): void {
 
       if (!room.gameStarted) {
         room.players[idx] = null;
+        broadcastState();
+        return;
+      }
+
+      if (room.paused) {
         broadcastState();
         return;
       }

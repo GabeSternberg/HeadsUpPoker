@@ -14,6 +14,7 @@ interface GameProps {
   onNextHand: () => void;
   onRebuy: () => void;
   onLeave: () => void;
+  onTogglePause: () => void;
   avatarFiles: { L: string[]; G: string[] };
   uiMode: 'mobile' | 'pc';
   onSetUiMode: (mode: 'mobile' | 'pc') => void;
@@ -79,7 +80,8 @@ function PlayerArea({
           </div>
         )}
         <span className="player-name">{displayName}{isMe ? ' (You)' : ''}</span>
-        {!player.connected && <span className="disconnected-tag">DISCONNECTED</span>}
+        {!player.connected && gameState.paused && <span className="away-tag">AWAY</span>}
+        {!player.connected && !gameState.paused && <span className="disconnected-tag">DISCONNECTED</span>}
         {hand && player.isDealer && <span className="marker dealer-marker">D</span>}
         {hand && player.isSB && <span className="marker sb-marker">SB</span>}
         {hand && player.isBB && <span className="marker bb-marker">BB</span>}
@@ -153,7 +155,7 @@ function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameStat
   );
 }
 
-export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, avatarFiles, uiMode, onSetUiMode }: GameProps) {
+export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, avatarFiles, uiMode, onSetUiMode }: GameProps) {
   const me = gameState.players[myIndex];
   const hand = gameState.hand;
   const isMyTurn = hand && !hand.handOver && hand.currentPlayerIndex === myIndex;
@@ -167,6 +169,23 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
 
   return (
     <div className={`game${uiMode === 'mobile' ? ' mobile-ui' : ''}`}>
+      {gameState.paused && (
+        <div className="pause-banner">
+          Game Paused — safe to tab out. Click Resume when back.
+        </div>
+      )}
+
+      <div className="game-controls-row">
+        {!gameState.matchOver && (
+          <button
+            className={`btn btn-pause ${gameState.paused ? 'paused' : ''}`}
+            onClick={onTogglePause}
+          >
+            {gameState.paused ? 'Resume Game' : 'Pause Game'}
+          </button>
+        )}
+      </div>
+
       {/* Opponents (top) */}
       <div className="opponents-row">
         {opponents.map(({ player, index }) => (
@@ -209,9 +228,11 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
 
           {!hand?.handOver && (
             <div className="turn-indicator">
-              {isMyTurn
-                ? 'Your turn'
-                : `Waiting for ${getDisplayName(gameState, hand?.currentPlayerIndex ?? 0)}...`}
+              {gameState.paused
+                ? 'Game paused'
+                : isMyTurn
+                  ? 'Your turn'
+                  : `Waiting for ${getDisplayName(gameState, hand?.currentPlayerIndex ?? 0)}...`}
             </div>
           )}
 
@@ -260,7 +281,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
             avatarFiles={avatarFiles}
           />
 
-          {isMyTurn && gameState.legalActions && (
+          {isMyTurn && gameState.legalActions && !gameState.paused && (
             <ActionPanel
               legalActions={gameState.legalActions}
               onAction={onAction}

@@ -87,4 +87,6 @@ export interface GameState {
   stats: PlayerStatsRaw[];
   vcState: VCStateInfo | null;
   isPending: boolean;
+  isBlockedJoiner: boolean;
+  paused: boolean;
 }

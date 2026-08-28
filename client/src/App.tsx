@@ -23,6 +23,10 @@ function App() {
     setUiModeState(mode);
   }, []);
 
+  // Admin reset state (room full recovery)
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState<string | null>(null);
+
   // Secret code state
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [secretCode, setSecretCode] = useState('');
@@ -46,17 +50,24 @@ function App() {
     s.on('gameState', (state: GameState) => {
       setGameState(state);
       setError(null);
+      if (!state.isBlockedJoiner) {
+        setAdminError(null);
+        setAdminPassword('');
+      }
     });
 
     s.on('error', (data: { message: string }) => {
-      if (data.message === 'Room is full') {
-        setError('Room is full — retrying...');
-        setTimeout(() => {
-          if (!s.connected) s.connect();
-        }, 1500);
-        return;
-      }
       setError(data.message);
+    });
+
+    s.on('adminResetError', (data: { message: string }) => {
+      setAdminError(data.message);
+    });
+
+    s.on('kicked', (data: { message: string }) => {
+      setError(data.message);
+      setGameState(null);
+      setMyIndex(-1);
     });
 
     s.on('actionError', (data: { message: string }) => {
@@ -167,7 +178,18 @@ function App() {
     socket.emit('setAvatarAssignment', { playerIndex, role });
   }, [socket]);
 
-  if (error && !gameState && error !== 'Room is full — retrying...') {
+  const handleTogglePause = useCallback(() => {
+    if (!socket) return;
+    socket.emit('togglePause');
+  }, [socket]);
+
+  const handleAdminReset = useCallback(() => {
+    if (!socket) return;
+    setAdminError(null);
+    socket.emit('adminReset', { password: adminPassword });
+  }, [socket, adminPassword]);
+
+  if (error && !gameState) {
     return <div className="app"><div className="error">{error}</div></div>;
   }
 
@@ -177,6 +199,43 @@ function App() {
 
   const isVC = gameState.mode === 'virtualcards';
   const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Poker' : 'Heads-Up Poker';
+
+  if (gameState.isBlockedJoiner) {
+    return (
+      <div className="app">
+        <h1>{title}</h1>
+        <div className="blocked-join-screen">
+          <div className="blocked-join-card">
+            <h2>Room is Full</h2>
+            <p className="blocked-join-desc">
+              Two players are occupying the table{gameState.gameStarted ? ' (game in progress)' : ''}.
+              If they are stale connections, enter the admin password to reset and join.
+            </p>
+            {gameState.players.some(p => p) && (
+              <div className="blocked-join-players">
+                {gameState.players.map((p, i) => p && (
+                  <span key={i} className="blocked-player-tag">
+                    {getDisplayName(gameState, i)}{p.connected ? '' : ' (disconnected)'}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="admin-reset-form">
+              <input
+                type="password"
+                placeholder="Admin password"
+                value={adminPassword}
+                onChange={e => setAdminPassword(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAdminReset(); }}
+              />
+              <button className="btn btn-admin-reset" onClick={handleAdminReset}>Reset & Join</button>
+            </div>
+            {adminError && <p className="admin-error">{adminError}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // VC pending: player connected but hasn't clicked "Join Table" yet
   if (gameState.isPending) {
@@ -300,6 +359,7 @@ function App() {
           onNextHand={handleNextHand}
           onRebuy={handleRebuy}
           onLeave={handleLeave}
+          onTogglePause={handleTogglePause}
           avatarFiles={avatarFiles}
           uiMode={uiMode}
           onSetUiMode={handleSetUiMode}

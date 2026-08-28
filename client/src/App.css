@@ -232,6 +232,107 @@ h1 {
   font-size: 0.8rem;
 }
 
+.away-tag {
+  background: #f39c12;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pause-banner {
+  background: #f39c12;
+  color: #000;
+  text-align: center;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.game-controls-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.btn-pause {
+  background: #34495e;
+  color: #fff;
+  padding: 8px 20px;
+}
+
+.btn-pause.paused {
+  background: #2ecc71;
+  color: #000;
+}
+
+.btn-pause:hover { opacity: 0.9; }
+
+.blocked-join-screen {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.blocked-join-card {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+
+.blocked-join-desc {
+  color: #aaa;
+  margin: 12px 0 16px;
+  line-height: 1.5;
+}
+
+.blocked-join-players {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.blocked-player-tag {
+  background: #0f3460;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.admin-reset-form {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.admin-reset-form input {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #0f3460;
+  background: #1a1a2e;
+  color: #fff;
+}
+
+.btn-admin-reset {
+  background: #e94560;
+  color: #fff;
+  padding: 8px 16px;
+}
+
+.admin-error {
+  color: #e74c3c;
+  margin-top: 10px;
+}
+
 .cards {
   display: flex;
   gap: 8px;

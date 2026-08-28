@@ -157,6 +157,8 @@ export interface Room {
   vc: VCState | null;
   vcPending: string[]; // socket IDs connected but not yet seated (VC mode)
   vcDealerIndex: number; // tracks dealer button for SB/BB cycling
+  blockedJoiners: string[]; // socket IDs that couldn't join (room full)
+  paused: boolean;
 }
 
 export function createRoom(): Room {
@@ -179,6 +181,8 @@ export function createRoom(): Room {
     vc: null,
     vcPending: [],
     vcDealerIndex: -1, // -1 = not yet set; randomised on first deal
+    blockedJoiners: [],
+    paused: false,
   };
 }
 
@@ -1174,6 +1178,8 @@ export function getClientState(room: Room, playerIndex: number) {
     } : null,
     stats: room.stats,
     isPending: false,
+    isBlockedJoiner: false,
+    paused: room.paused,
     vcState: room.mode === 'virtualcards' && room.vc ? {
       phase: room.vc.phase,
       myCards: room.vc.playerCards[playerIndex] ?? [],
@@ -1181,6 +1187,34 @@ export function getClientState(room: Room, playerIndex: number) {
       sbSeat: room.vc.sbSeat,
       bbSeat: room.vc.bbSeat,
     } : null,
+  };
+}
+
+/** State for clients blocked because the room is full. */
+export function getBlockedJoinerState(room: Room) {
+  return {
+    isBlockedJoiner: true,
+    isPending: false,
+    mode: room.mode,
+    players: room.players.map((p, i) => p
+      ? { name: getDisplayName(room, i), ready: p.ready, connected: p.connected,
+          stack: p.stack, holeCards: null, isDealer: false, isSB: false, isBB: false, folded: false }
+      : null),
+    settings: room.settings,
+    gameStarted: room.gameStarted,
+    matchOver: room.matchOver,
+    hand: null,
+    legalActions: null,
+    actionLog: [],
+    myIndex: -1,
+    avatarMode: room.avatarMode,
+    avatarAssignment: room.avatarAssignment,
+    handNumber: room.handNumber,
+    lastShowdown: null,
+    lastFoldedHand: null,
+    stats: [],
+    paused: room.paused,
+    vcState: null,
   };
 }
 
@@ -1206,6 +1240,8 @@ export function getVCViewerState(room: Room) {
     lastShowdown: null,
     lastFoldedHand: null,
     stats: [],
+    isBlockedJoiner: false,
+    paused: false,
     vcState: null,
   };
 }

@@ -4,6 +4,7 @@ import { GameState } from './types';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
 import VirtualCards from './components/VirtualCards';
+import { getDisplayName } from './displayNames';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -30,18 +31,31 @@ function App() {
   const [avatarFiles, setAvatarFiles] = useState<{ L: string[]; G: string[] }>({ L: [], G: [] });
 
   useEffect(() => {
-    const s = io(SERVER_URL);
+    const s = io(SERVER_URL, {
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1500,
+    });
     setSocket(s);
 
     s.on('assignPlayer', (data: { index: number; name: string }) => {
       setMyIndex(data.index);
+      setError(null);
     });
 
     s.on('gameState', (state: GameState) => {
       setGameState(state);
+      setError(null);
     });
 
     s.on('error', (data: { message: string }) => {
+      if (data.message === 'Room is full') {
+        setError('Room is full — retrying...');
+        setTimeout(() => {
+          if (!s.connected) s.connect();
+        }, 1500);
+        return;
+      }
       setError(data.message);
     });
 
@@ -153,7 +167,7 @@ function App() {
     socket.emit('setAvatarAssignment', { playerIndex, role });
   }, [socket]);
 
-  if (error && !gameState) {
+  if (error && !gameState && error !== 'Room is full — retrying...') {
     return <div className="app"><div className="error">{error}</div></div>;
   }
 
@@ -197,8 +211,8 @@ function App() {
                 {gameState.players.some(p => p) && (
                   <div className="vc-join-players">
                     <span className="vc-join-label">Already at the table:</span>
-                    {gameState.players.filter(p => p).map((p, i) => (
-                      <span key={i} className="vc-join-player-tag">{p!.name}</span>
+                    {gameState.players.map((p, i) => p && (
+                      <span key={i} className="vc-join-player-tag">{getDisplayName(gameState, i)}</span>
                     ))}
                   </div>
                 )}

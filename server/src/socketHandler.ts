@@ -3,10 +3,52 @@
  */
 
 import { Server, Socket } from 'socket.io';
-import { Room, createRoom, startHand, handleAction, getClientState, getVCViewerState, checkMatchOver, PlayerState, GameMode, vcDeal, vcNextPhase } from './gameState';
+import { Room, createRoom, startHand, handleAction, getClientState, getVCViewerState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
+import { syncAvatarPlayerNames } from './displayNames';
 
 export function setupSocketHandlers(io: Server): void {
   let room: Room = createRoom();
+
+  function isSocketLive(socketId: string): boolean {
+    return io.sockets.sockets.has(socketId);
+  }
+
+  function isSeatAvailable(index: number): boolean {
+    const player = room.players[index];
+    if (player === null) return true;
+    if (!player.connected) return true;
+    return !isSocketLive(player.id);
+  }
+
+  function cleanupStalePlayers(): void {
+    for (let i = 0; i < room.players.length; i++) {
+      const player = room.players[i];
+      if (!player) continue;
+      if (player.connected && !isSocketLive(player.id)) {
+        player.connected = false;
+        if (!room.gameStarted) {
+          room.players[i] = null;
+        }
+      }
+    }
+  }
+
+  function findHeadsUpSeat(): number {
+    for (let i = 0; i < 2; i++) {
+      if (isSeatAvailable(i)) return i;
+    }
+    return -1;
+  }
+
+  function findUnlimitedSeat(): number {
+    for (let i = 0; i < room.players.length; i++) {
+      if (isSeatAvailable(i)) return i;
+    }
+    if (!room.gameStarted) {
+      return room.players.length;
+    }
+    return -1;
+  }
 
   function broadcastState(): void {
     for (let i = 0; i < room.players.length; i++) {
@@ -63,18 +105,13 @@ export function setupSocketHandlers(io: Server): void {
       socket.emit('gameState', getVCViewerState(room));
       broadcastState();
     } else {
+      cleanupStalePlayers();
+
       if (room.mode === 'headsup') {
-        for (let i = 0; i < 2; i++) {
-          if (room.players[i] === null) { playerIndex = i; break; }
-          if (!room.players[i]!.connected) { playerIndex = i; break; }
-        }
+        playerIndex = findHeadsUpSeat();
       } else {
-        for (let i = 0; i < room.players.length; i++) {
-          if (room.players[i] === null) { playerIndex = i; break; }
-          if (!room.players[i]!.connected && !room.gameStarted) { playerIndex = i; break; }
-        }
-        if (playerIndex === -1 && !room.gameStarted) {
-          playerIndex = room.players.length;
+        playerIndex = findUnlimitedSeat();
+        if (playerIndex >= room.players.length && playerIndex !== -1) {
           room.players.push(null);
           room.avatarAssignment.push(null);
         }
@@ -333,6 +370,7 @@ export function setupSocketHandlers(io: Server): void {
     // Avatar mode
     socket.on('activateAvatarMode', () => {
       room.avatarMode = true;
+      syncAvatarPlayerNames(room);
       broadcastState();
     });
 
@@ -347,6 +385,7 @@ export function setupSocketHandlers(io: Server): void {
       if (otherIndex < room.players.length) {
         room.avatarAssignment[otherIndex] = otherRole;
       }
+      syncAvatarPlayerNames(room);
       broadcastState();
     });
 
@@ -400,6 +439,12 @@ export function setupSocketHandlers(io: Server): void {
 
       room.players[idx]!.connected = false;
 
+      if (!room.gameStarted) {
+        room.players[idx] = null;
+        broadcastState();
+        return;
+      }
+
       if (room.gameStarted && room.hand && !room.hand.handOver) {
         if (room.mode === 'headsup') {
           const winner = 1 - idx;
@@ -452,16 +497,6 @@ export function setupSocketHandlers(io: Server): void {
       } else {
         broadcastState();
       }
-
-      // Clean up after delay
-      setTimeout(() => {
-        if (room.players[idx] && !room.players[idx]!.connected) {
-          if (!room.gameStarted) {
-            room.players[idx] = null;
-            broadcastState();
-          }
-        }
-      }, 10000);
     });
   });
 }

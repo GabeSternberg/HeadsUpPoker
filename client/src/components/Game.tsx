@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { GameState, PlayerInfo, LastShowdownInfo, Card } from '../types';
+import { getDisplayName, buildNameMap, resolveEntry } from '../displayNames';
 import { CardDisplay, CardBack } from './Card';
 import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
@@ -53,8 +54,7 @@ function PlayerArea({
   const avatar = getAvatarUrl(index, gameState, avatarFiles);
   const isFolded = hand?.playerFolded[index];
   const isCurrentTurn = hand && !hand.handOver && hand.currentPlayerIndex === index;
-  const role = gameState.avatarMode ? gameState.avatarAssignment[index] : null;
-  const displayName = role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : player.name;
+  const displayName = getDisplayName(gameState, index);
   const rawStats = gameState.stats?.[index];
   const showStats = gameState.avatarMode && rawStats && rawStats.handsPlayed >= 0;
 
@@ -101,24 +101,6 @@ function PlayerArea({
   );
 }
 
-function buildNameMap(gameState: GameState): Record<string, string> {
-  if (!gameState.avatarMode) return {};
-  const map: Record<string, string> = {};
-  gameState.players.forEach((p, i) => {
-    if (!p) return;
-    const role = gameState.avatarAssignment[i];
-    if (role === 'G') map[p.name] = 'Gabe';
-    else if (role === 'L') map[p.name] = 'Liana';
-  });
-  return map;
-}
-
-function resolveEntry(entry: string, nameMap: Record<string, string>): string {
-  let s = entry;
-  for (const [raw, display] of Object.entries(nameMap)) s = s.split(raw).join(display);
-  return s;
-}
-
 function LastFoldedPreview({ data, gameState }: { data: { actionLog: string[]; myHoleCards: Card[] }; gameState: GameState }) {
   const nameMap = buildNameMap(gameState);
   return (
@@ -144,11 +126,7 @@ function LastFoldedPreview({ data, gameState }: { data: { actionLog: string[]; m
 }
 
 function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameState: GameState }) {
-  const seatName = (seat: number, fallback: string) => {
-    if (!gameState.avatarMode) return fallback;
-    const role = gameState.avatarAssignment[seat];
-    return role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : fallback;
-  };
+  const seatName = (seat: number, fallback: string) => getDisplayName(gameState, seat, fallback);
   const nameMap = buildNameMap(gameState);
   return (
     <div className="last-hand-popup">
@@ -231,7 +209,9 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
 
           {!hand?.handOver && (
             <div className="turn-indicator">
-              {isMyTurn ? 'Your turn' : `Waiting for ${gameState.players[hand?.currentPlayerIndex ?? 0]?.name}...`}
+              {isMyTurn
+                ? 'Your turn'
+                : `Waiting for ${getDisplayName(gameState, hand?.currentPlayerIndex ?? 0)}...`}
             </div>
           )}
 
@@ -281,7 +261,13 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           />
 
           {isMyTurn && gameState.legalActions && (
-            <ActionPanel legalActions={gameState.legalActions} onAction={onAction} pot={hand?.pot ?? 0} isMobile={uiMode === 'mobile'} />
+            <ActionPanel
+              legalActions={gameState.legalActions}
+              onAction={onAction}
+              pot={hand?.pot ?? 0}
+              currentBet={hand?.currentBet ?? 0}
+              isMobile={uiMode === 'mobile'}
+            />
           )}
         </div>
       )}

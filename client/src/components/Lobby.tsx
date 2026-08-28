@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { GameState } from '../types';
+import { getDisplayName } from '../displayNames';
 
 interface LobbyProps {
   gameState: GameState;
@@ -102,7 +103,11 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
           return (
             <div key={i} className={`player-slot ${player ? 'connected' : 'empty'}`}>
               <span className="player-name">
-                {player ? player.name : `Slot ${i + 1} — waiting...`}
+                {player
+                  ? getDisplayName(gameState, i)
+                  : gameState.avatarMode
+                    ? 'Waiting...'
+                    : `Slot ${i + 1} — waiting...`}
               </span>
               {player && (
                 <span className={`ready-status ${player.ready ? 'ready' : 'not-ready'}`}>

@@ -1,4 +1,5 @@
 import { GameState } from '../types';
+import { getDisplayName } from '../displayNames';
 import { CardDisplay } from './Card';
 
 interface VirtualCardsProps {
@@ -51,8 +52,7 @@ export default function VirtualCards({ gameState, myIndex, onNextPhase, onNextHa
         {gameState.players.map((player, i) => {
           if (!player) return null;
           const isMe = i === myIndex;
-          const role = gameState.avatarMode ? gameState.avatarAssignment[i] : null;
-          const displayName = role === 'G' ? 'Gabe' : role === 'L' ? 'Liana' : player.name;
+          const displayName = getDisplayName(gameState, i);
           return (
             <div key={i} className={`vc-player ${isMe ? 'vc-me' : ''}`}>
               <span className="vc-player-name">{displayName}{isMe ? ' (You)' : ''}</span>

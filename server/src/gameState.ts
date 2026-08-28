@@ -17,6 +17,7 @@ import { BettingState, getLegalActions, processAction, newStreetBetting, PlayerA
 import { evaluateHand, compareHands, HandResult } from './handEvaluator';
 import { appendHandRow, StatsLogData } from './statsLogger';
 import { PendingDecision, flushDecisions } from './classifierLogger';
+import { getDisplayName, mapNamesInText } from './displayNames';
 
 export type Round = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type GameMode = 'headsup' | 'unlimited' | 'virtualcards';
@@ -1122,7 +1123,7 @@ export function getClientState(room: Room, playerIndex: number) {
     players: room.players.map((p, i) => {
       if (!p) return null;
       return {
-        name: p.name,
+        name: getDisplayName(room, i),
         ready: p.ready,
         connected: p.connected,
         stack: p.stack,
@@ -1149,19 +1150,26 @@ export function getClientState(room: Room, playerIndex: number) {
       handOver: room.hand.handOver,
       showdown: room.hand.showdown,
       winner: room.hand.winner,
-      resultMessage: room.hand.resultMessage,
+      resultMessage: room.hand.resultMessage ? mapNamesInText(room, room.hand.resultMessage) : '',
     } : null,
     legalActions: room.hand && !room.hand.handOver && room.hand.currentPlayerIndex === playerIndex
       ? getCurrentLegalActions(room)
       : null,
-    actionLog: room.actionLog,
+    actionLog: room.actionLog.map(entry => mapNamesInText(room, entry)),
     myIndex: playerIndex,
     avatarMode: room.avatarMode,
     avatarAssignment: room.avatarAssignment,
     handNumber: room.handNumber,
-    lastShowdown: room.lastShowdown,
+    lastShowdown: room.lastShowdown ? {
+      ...room.lastShowdown,
+      playerHands: room.lastShowdown.playerHands.map(ph => ({
+        ...ph,
+        name: getDisplayName(room, ph.seat),
+      })),
+      resultMessage: mapNamesInText(room, room.lastShowdown.resultMessage),
+    } : null,
     lastFoldedHand: room.lastFoldedHand ? {
-      actionLog: room.lastFoldedHand.actionLog,
+      actionLog: room.lastFoldedHand.actionLog.map(entry => mapNamesInText(room, entry)),
       myHoleCards: room.lastFoldedHand.playerHoleCards.find(p => p.seat === playerIndex)?.holeCards ?? [],
     } : null,
     stats: room.stats,
@@ -1181,8 +1189,8 @@ export function getVCViewerState(room: Room) {
   return {
     isPending: true,
     mode: room.mode,
-    players: room.players.map(p => p
-      ? { name: p.name, ready: p.ready, connected: p.connected,
+    players: room.players.map((p, i) => p
+      ? { name: getDisplayName(room, i), ready: p.ready, connected: p.connected,
           stack: 0, holeCards: null, isDealer: false, isSB: false, isBB: false, folded: false }
       : null),
     settings: room.settings,

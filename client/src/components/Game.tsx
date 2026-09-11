@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GameState, PlayerInfo, LastShowdownInfo, Card } from '../types';
 import { getDisplayName, buildNameMap, resolveEntry } from '../displayNames';
 import { CardDisplay, CardBack } from './Card';
@@ -156,6 +156,29 @@ function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameStat
 }
 
 export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, avatarFiles, uiMode, onSetUiMode }: GameProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const dismissOnOutsideClick = (event: PointerEvent) => {
+      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false);
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSettingsOpen(false);
+        settingsButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', dismissOnOutsideClick);
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOnOutsideClick);
+      document.removeEventListener('keydown', dismissOnEscape);
+    };
+  }, [settingsOpen]);
+
   const me = gameState.players[myIndex];
   const hand = gameState.hand;
   const isMyTurn = hand && !hand.handOver && hand.currentPlayerIndex === myIndex;
@@ -176,6 +199,33 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
       )}
 
       <div className="game-controls-row">
+        <div className="match-settings" ref={settingsRef} onBlur={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSettingsOpen(false);
+        }}>
+          <button
+            ref={settingsButtonRef}
+            type="button"
+            className="btn btn-settings"
+            aria-label="Match settings"
+            aria-expanded={settingsOpen}
+            aria-controls="match-settings-panel"
+            onClick={() => setSettingsOpen(open => !open)}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m9 3-.5 2-2 1L4.5 5.5l-2 3.5L4 10.5v3L2.5 15l2 3.5 2-.5 2 1 .5 2h4l.5-2 2-1 2 .5 2-3.5-1.5-1.5v-3L20 9l-2-3.5-2 .5-2-1-.5-2z" />
+              <circle cx="11.25" cy="12" r="3" />
+            </svg>
+          </button>
+          {settingsOpen && (
+            <div className="match-settings-panel" id="match-settings-panel">
+              <button type="button" className="btn btn-reset" onClick={() => {
+                setSettingsOpen(false);
+                onResetMatch();
+              }}>Reset to lobby</button>
+              <p>Ends the current match for everyone.</p>
+            </div>
+          )}
+        </div>
         {!gameState.matchOver && (
           <button
             className={`btn btn-pause ${gameState.paused ? 'paused' : ''}`}

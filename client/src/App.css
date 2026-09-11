@@ -252,6 +252,10 @@ h1 {
 }
 
 .game-controls-row {
+  position: relative;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 52px;
   display: flex;
   justify-content: center;
   margin-bottom: 12px;
@@ -1474,3 +1478,45 @@ body:has(.mobile-ui) h1 {
   justify-content: center;
   margin-bottom: 20px;
 }
+
+/* Match settings */
+.match-settings {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 210;
+}
+
+.btn-settings {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: #34495e;
+  color: #fff;
+}
+
+.btn-settings:hover,
+.btn-settings[aria-expanded="true"] { background: #46627e; }
+
+.match-settings button:focus-visible {
+  outline: 2px solid #f1c40f;
+  outline-offset: 3px;
+}
+
+.match-settings-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 240px;
+  max-width: calc(100vw - 40px);
+  padding: 14px;
+  background: #16213e;
+  border: 1px solid #46627e;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.match-settings-panel .btn { width: 100%; min-height: 44px; }
+.match-settings-panel p { margin: 10px 0 0; color: #aaa; font-size: 0.8rem; line-height: 1.4; }

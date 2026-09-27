@@ -26,9 +26,9 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
   const smallBlind = bigBlind / 2;
 
   const isVC = gameState.mode === 'virtualcards';
-  const connectedPlayers = gameState.players.filter(p => p && p.connected);
+  const connectedPlayers = gameState.players.filter(p => p && p.connected && !p.sittingOut);
   const minPlayers = isVC ? 1 : 2;
-  const canReady = connectedPlayers.length >= minPlayers;
+  const canReady = connectedPlayers.length >= minPlayers && !gameState.players[myIndex]?.sittingOut;
 
   const handleStartingSumChange = (val: string) => {
     const num = parseInt(val, 10);
@@ -68,7 +68,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
               </span>
               {player && (
                 <span className={`ready-status ${player.ready ? 'ready' : 'not-ready'}`}>
-                  {player.ready ? 'READY' : 'Not Ready'}
+                  {player.sittingOut ? 'Sitting out' : player.ready ? 'READY' : 'Not Ready'}
                 </span>
               )}
               {player && !isVC && <span>{player.stack} chips</span>}

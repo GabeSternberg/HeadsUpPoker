@@ -1,12 +1,14 @@
 /** Independent, server-authoritative tables with private reconnect credentials. */
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
 import { syncAvatarPlayerNames } from './displayNames';
 
-interface Member { token: string; socketId: string; name: string; seat: number }
+interface Member { id: string; token: string; socketId: string; name: string; seat: number }
 interface SeatRequest { token: string; seat: number; chips?: number }
+interface LedgerEntry { id: string; playerId: string; name: string; type: 'buy-in' | 'cash-out'; amount: number; reason: string; timestamp: string }
 interface Table {
+  private: boolean; accessKey: string; ledger: LedgerEntry[];
   code: string; room: Room; host: string; members: Map<string, Member>;
   requests: SeatRequest[]; additions: Map<number, number>; updated: number;
 }
@@ -18,17 +20,29 @@ export function setupSocketHandlers(io: Server): void {
   const inHand = (t: Table) => !!t.room.hand && !t.room.hand.handOver;
   const capacity = (t: Table) => t.room.mode === 'headsup' ? 2 : 9;
   function directory() {
-    io.emit('tables', [...tables.values()].map(t => ({ code: t.code, mode: t.room.mode,
+    io.emit('tables', [...tables.values()].filter(t => !t.private).map(t => ({ code: t.code, mode: t.room.mode,
       host: t.members.get(t.host)?.name ?? 'Host', players: t.room.players.filter(Boolean).length,
       capacity: capacity(t), started: t.room.gameStarted })));
   }
+  function record(t: Table, m: Member, type: LedgerEntry['type'], amount: number, reason: string) {
+    if (t.room.mode === 'virtualcards' || amount === 0) return;
+    t.ledger.push({ id: randomUUID(), playerId: m.id, name: m.name, type, amount, reason, timestamp: new Date().toISOString() });
+  }
+  function cashOut(t: Table, m: Member, reason: string) {
+    if (m.seat < 0) return;
+    applyPending(t);
+    record(t, m, 'cash-out', t.room.players[m.seat]!.stack, reason);
+    t.room.players[m.seat] = null; t.additions.delete(m.seat); m.seat = -1;
+  }
   function seat(t: Table, m: Member, index: number, chips: number) {
     m.seat = index;
+    record(t, m, 'buy-in', chips, 'Seat buy-in');
     t.room.players[index] = { id: m.socketId, name: m.name, connected: true, ready: false,
       stack: chips, holeCards: [], seatIndex: index };
   }
   function applyPending(t: Table) {
     if (inHand(t)) return;
+    for (const p of t.room.players) if (p?.sitOutNextHand) { p.sittingOut = true; p.sitOutNextHand = false; p.ready = false; }
     for (const request of t.requests.filter(r => r.chips !== undefined)) {
       const m = t.members.get(request.token);
       if (!m || !io.sockets.sockets.has(m.socketId)) continue;
@@ -38,7 +52,10 @@ export function setupSocketHandlers(io: Server): void {
     }
     for (const [index, amount] of t.additions) {
       const p = t.room.players[index];
-      if (p) { p.stack += amount; t.room.actionLog.push(`Host added ${amount} chips to ${p.name}`); }
+      if (p) {
+        const m = [...t.members.values()].find(m => m.seat === index);
+        if (m) record(t, m, 'buy-in', amount, 'Host top-up');
+        p.stack += amount; t.room.actionLog.push(`Host added ${amount} chips to ${p.name}`); }
     }
     t.additions.clear();
   }
@@ -57,6 +74,9 @@ export function setupSocketHandlers(io: Server): void {
           id: String(r.seat), seat: r.seat, name: t.members.get(r.token)?.name, approved: r.chips !== undefined,
         })) : [],
         pendingChips: Object.fromEntries(t.additions),
+        isPrivate: t.private, accessKey: t.private ? t.accessKey : '',
+        ledger: t.room.mode === 'virtualcards' ? [] : t.ledger,
+        hostCandidates: m.token === t.host ? [...t.members.values()].filter(candidate => candidate.token !== t.host && io.sockets.sockets.has(candidate.socketId)).map(candidate => ({ id: candidate.id, name: candidate.name })) : [],
       });
     }
     directory();
@@ -99,11 +119,11 @@ export function setupSocketHandlers(io: Server): void {
       if (!name) return error('Enter your name.');
       let code: string;
       do { code = randomBytes(3).toString('hex').toUpperCase(); } while (tables.has(code));
-      const m: Member = { token: randomBytes(24).toString('hex'), socketId: socket.id, name, seat: -1 };
+      const m: Member = { id: randomUUID(), token: randomBytes(24).toString('hex'), socketId: socket.id, name, seat: -1 };
       const room = createRoom(); room.mode = data.mode as GameMode;
       room.players = new Array(room.mode === 'headsup' ? 2 : 9).fill(null);
       room.avatarAssignment = new Array(room.players.length).fill(null);
-      const t: Table = { code, room, host: m.token, members: new Map([[m.token, m]]), requests: [], additions: new Map(), updated: Date.now() };
+      const t: Table = { private: data.isPrivate === true, accessKey: randomBytes(16).toString('hex'), ledger: [], code, room, host: m.token, members: new Map([[m.token, m]]), requests: [], additions: new Map(), updated: Date.now() };
       seat(t, m, 0, room.settings.startingSum);
       tables.set(code, t); attach(t, m);
     });
@@ -111,10 +131,14 @@ export function setupSocketHandlers(io: Server): void {
       if (table || !data || typeof data.code !== 'string') return;
       const t = tables.get(data.code.trim().toUpperCase());
       if (!t) return error('Game not found. Check the code or create a new game.');
+      if (t.private) {
+        const key = typeof data.accessKey === 'string' ? data.accessKey : '';
+        if (Buffer.byteLength(key) !== Buffer.byteLength(t.accessKey) || !timingSafeEqual(Buffer.from(key), Buffer.from(t.accessKey))) return error('This private game requires its invite link or access key.');
+      }
       const name = typeof data.name === 'string' ? data.name.trim().slice(0, 30) : '';
       if (!name) return error('Enter your name.');
       if (t.members.size >= 50) return error('This table has too many viewers.');
-      const m: Member = { token: randomBytes(24).toString('hex'), socketId: socket.id, name, seat: -1 };
+      const m: Member = { id: randomUUID(), token: randomBytes(24).toString('hex'), socketId: socket.id, name, seat: -1 };
       t.members.set(m.token, m);
       if (t.room.mode !== 'unlimited') {
         const index = t.room.players.findIndex(p => !p);
@@ -161,14 +185,22 @@ export function setupSocketHandlers(io: Server): void {
           t.room.settings[key] = data[key];
         }
       }
-      if (t.room.mode === 'headsup') for (const p of t.room.players) if (p) p.stack = t.room.settings.startingSum;
+      if (t.room.mode === 'headsup' && data.startingSum !== undefined) for (const m of t.members.values()) {
+        const p = t.room.players[m.seat];
+        if (!p) continue;
+        const difference = t.room.settings.startingSum - p.stack;
+        record(t, m, difference >= 0 ? 'buy-in' : 'cash-out', Math.abs(difference), 'Starting chips adjustment');
+        p.stack = t.room.settings.startingSum;
+      }
       for (const p of t.room.players) if (p) p.ready = false;
       broadcast(t);
     });
     on('toggleReady', (_data, t, m) => {
       if (m.seat < 0 || t.room.gameStarted) return;
-      const p = t.room.players[m.seat]!; p.ready = !p.ready;
-      const players = t.room.players.filter(p => p && p.connected && (p.stack > 0 || t.room.mode === 'virtualcards'));
+      const p = t.room.players[m.seat]!;
+      if (p.sittingOut) return error('Sit back in before readying.');
+      p.ready = !p.ready;
+      const players = t.room.players.filter(p => p && p.connected && !p.sittingOut && (p.stack > 0 || t.room.mode === 'virtualcards'));
       if (players.length >= (t.room.mode === 'virtualcards' ? 1 : 2) && players.every(p => p!.ready)) {
         if (t.room.mode === 'virtualcards') vcDeal(t.room);
         else { t.room.gameStarted = true; startHand(t.room); }
@@ -188,15 +220,34 @@ export function setupSocketHandlers(io: Server): void {
       if (m.seat < 0 || t.room.paused || !t.room.hand?.handOver) return;
       applyPending(t);
       if (checkMatchOver(t.room)) { broadcast(t); return; }
-      const seats = t.room.players.flatMap((p, i) => p && p.connected && p.stack > 0 ? [i] : []);
-      if (seats.length < 2) return error('Need at least two connected players with chips.');
+      const seats = t.room.players.flatMap((p, i) => p && p.connected && !p.sittingOut && p.stack > 0 ? [i] : []);
+      if (seats.length < 2) return error('Need at least two connected players sitting in with chips.');
       t.room.dealerIndex = seats.find(s => s > t.room.dealerIndex) ?? seats[0];
       startHand(t.room); broadcast(t);
     });
     on('togglePause', (_data, t) => {
       if (!hostOnly()) return;
-      if (t.room.paused && t.room.hand?.participants.some(s => !t.room.players[s]?.connected)) return error('Wait for disconnected players to reconnect before resuming.');
+      if (t.room.paused && inHand(t) && t.room.hand?.participants.some(s => !t.room.players[s]?.connected)) return error('Wait for disconnected players to reconnect before resuming.');
       t.room.paused = !t.room.paused; broadcast(t);
+    });
+    on('setSittingOut', (data, t, m) => {
+      if (m.seat < 0 || typeof data.sittingOut !== 'boolean') return;
+      const p = t.room.players[m.seat]!;
+      if (inHand(t) && t.room.hand!.participants.includes(m.seat)) {
+        p.sitOutNextHand = data.sittingOut;
+      } else { p.sittingOut = data.sittingOut; p.sitOutNextHand = false; p.ready = false; }
+      broadcast(t);
+    });
+    on('transferHost', (data, t) => {
+      if (!hostOnly()) return;
+      const target = [...t.members.values()].find(m => m.id === data.id && io.sockets.sockets.has(m.socketId));
+      if (!target) return error('Choose a connected member.');
+      t.host = target.token; broadcast(t);
+    });
+    on('cashOut', (_data, t, m) => {
+      if (m.seat < 0) return;
+      if (inHand(t)) return error('Cash out after this hand finishes.');
+      cashOut(t, m, 'Player cash-out'); broadcast(t);
     });
     on('rebuy', () => error('Ask the host to add chips using the table controls.'));
     on('vcNextPhase', (_data, t) => { if (hostOnly() && t.room.mode === 'virtualcards') { vcNextPhase(t.room); broadcast(t); } });
@@ -221,10 +272,10 @@ export function setupSocketHandlers(io: Server): void {
       if (!table || !member) return;
       const t = table, m = member;
       if (inHand(t) && m.seat >= 0) return error('Finish this hand before leaving the table.');
-      if (m.seat >= 0) { t.room.players[m.seat] = null; t.additions.delete(m.seat); }
+      cashOut(t, m, 'Left table');
       t.members.delete(m.token); t.requests = t.requests.filter(r => r.token !== m.token);
       if (t.host === m.token) t.host = [...t.members.values()].find(p => io.sockets.sockets.has(p.socketId))?.token ?? t.members.keys().next().value ?? '';
-      table = undefined; member = undefined; socket.emit('tableLeft');
+      table = undefined; member = undefined; socket.emit('tableLeft', { ledger: t.ledger, tableCode: t.code });
       if (!t.members.size) tables.delete(t.code); else broadcast(t);
       directory();
     }
@@ -233,15 +284,16 @@ export function setupSocketHandlers(io: Server): void {
       if (!hostOnly() || inHand(t) || !Number.isInteger(data.targetIndex) || data.targetIndex < 0) return;
       const target = [...t.members.values()].find(m => m.seat === data.targetIndex);
       if (!target || target.token === t.host) return;
-      io.to(target.socketId).emit('kicked', { message: 'The host removed you from this table.' });
+      cashOut(t, target, 'Host removed player');
+      io.to(target.socketId).emit('kicked', { message: 'The host removed you from this table.', ledger: t.ledger, tableCode: t.code });
       io.sockets.sockets.get(target.socketId)?.disconnect(true);
-      t.room.players[target.seat] = null; t.members.delete(target.token); t.additions.delete(target.seat); broadcast(t);
+      t.members.delete(target.token); broadcast(t);
     });
     socket.on('disconnect', () => {
       if (!table || !member || member.socketId !== socket.id) return;
       if (member.seat >= 0) {
         table.room.players[member.seat]!.connected = false;
-        if (inHand(table)) {
+        if (inHand(table) && table.room.hand!.participants.includes(member.seat)) {
           table.room.paused = true;
           table.room.actionLog.push(`${member.name} disconnected. Host can resume after reconnection.`);
         }

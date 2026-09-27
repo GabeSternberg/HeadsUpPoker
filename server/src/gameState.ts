@@ -30,6 +30,8 @@ export interface PlayerState {
   stack: number;
   holeCards: Card[];
   seatIndex: number;
+  sittingOut?: boolean;
+  sitOutNextHand?: boolean;
 }
 
 export interface HandState {
@@ -190,7 +192,7 @@ export function createRoom(): Room {
 
 export function vcDeal(room: Room): void {
   const seated = room.players
-    .map((p, i) => (p && p.connected) ? i : -1)
+    .map((p, i) => (p && p.connected && !p.sittingOut) ? i : -1)
     .filter(i => i >= 0);
   if (seated.length === 0) return;
 
@@ -250,7 +252,7 @@ function occupiedSeats(room: Room): number[] {
 
 /** Get indices of all players with chips > 0 (eligible to play a hand). */
 function activeSeats(room: Room): number[] {
-  return room.players.map((p, i) => (p && p.connected && p.stack > 0) ? i : -1).filter(i => i >= 0);
+  return room.players.map((p, i) => (p && p.connected && !p.sittingOut && p.stack > 0) ? i : -1).filter(i => i >= 0);
 }
 
 /** Next occupied seat clockwise from `from` (excluding `from`). */
@@ -369,6 +371,7 @@ function getOpponentStats(room: Room, seat: number) {
 export function startHand(room: Room): void {
   const seats = activeSeats(room);
   if (seats.length < 2) return;
+  for (const p of room.players) if (p) p.holeCards = [];
 
   const deck = new Deck();
   const numPlayers = room.players.length;
@@ -1129,6 +1132,8 @@ export function getClientState(room: Room, playerIndex: number) {
       return {
         name: getDisplayName(room, i),
         ready: p.ready,
+        sittingOut: !!p.sittingOut,
+        sitOutNextHand: !!p.sitOutNextHand,
         connected: p.connected,
         stack: p.stack,
         holeCards: (i === playerIndex || (isShowdown && room.hand!.participants.includes(i) && !room.hand!.playerFolded[i])) ? p.holeCards : null,
@@ -1197,7 +1202,9 @@ export function getBlockedJoinerState(room: Room) {
     isPending: false,
     mode: room.mode,
     players: room.players.map((p, i) => p
-      ? { name: getDisplayName(room, i), ready: p.ready, connected: p.connected,
+      ? { name: getDisplayName(room, i), ready: p.ready,
+        sittingOut: !!p.sittingOut,
+        sitOutNextHand: !!p.sitOutNextHand, connected: p.connected,
           stack: p.stack, holeCards: null, isDealer: false, isSB: false, isBB: false, folded: false }
       : null),
     settings: room.settings,
@@ -1224,7 +1231,9 @@ export function getVCViewerState(room: Room) {
     isPending: true,
     mode: room.mode,
     players: room.players.map((p, i) => p
-      ? { name: getDisplayName(room, i), ready: p.ready, connected: p.connected,
+      ? { name: getDisplayName(room, i), ready: p.ready,
+        sittingOut: !!p.sittingOut,
+        sitOutNextHand: !!p.sitOutNextHand, connected: p.connected,
           stack: 0, holeCards: null, isDealer: false, isSB: false, isBB: false, folded: false }
       : null),
     settings: room.settings,

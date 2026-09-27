@@ -27,6 +27,9 @@ Open http://localhost:5173. Create a game, share its invite link or six-characte
 - The default buy-in setting supplies the approval form's default amount; it does not overwrite approved multi-handed stacks. Use Add chips for existing stacks.
 - Only the host can change shared settings, pause/resume, reset to the lobby, remove players, or control virtual-card dealing. Anyone seated can request the next hand once the previous hand ends.
 - Leaving or removing a seated player is allowed between hands. The host role passes to another connected member when the host leaves, or to a remaining member if everyone else is offline.
+- Use Sit out to hold your seat and chips without being dealt in or posting blinds. During your active hand this queues until the hand ends; you must still finish that hand. Sit back in makes you eligible for the next hand.
+- Hosts can explicitly transfer control to any connected member without leaving.
+- Cash out & stand up records your remaining stack and frees your seat between hands; you remain a viewer and can request another buy-in. Leaving or host removal also records a cash-out.
 - Disconnects preserve seats and pause an active hand. Reconnect in the same tab, then have the host resume. A different player cannot claim the disconnected seat.
 - Resets preserve table membership and stacks; they return players to the lobby. Add chips as needed before readying again.
 - Private cards stay hidden from other players and spectators, except non-folded hands at showdown.
@@ -47,13 +50,18 @@ The client reads `VITE_SERVER_URL` for the backend URL (default `http://localhos
 
 Tables and reconnect credentials currently live in memory in one server process. Keep a single backend instance with this implementation. Server restarts/redeploys clear tables; shared durable storage and coordination are required before supporting multiple backend instances. Disconnected/abandoned tables expire after 24 hours without a state update; tables with connected members are retained.
 
-The table directory is visible to all visitors; invite codes are convenience identifiers, not private-room passwords. Reconnect credentials are stored in sessionStorage and never included in the directory or invite URLs. The legacy shared admin-password reset is removed.
+Public games appear in the table directory. Private games are hidden and require a random 128-bit access key as well as the game code. Copy invite link includes the key in the URL fragment; you can also enter the key manually. Anyone with the private invite can join/watch and share it onward. Reconnect credentials are stored in sessionStorage and never included in the directory or invite URLs. The legacy shared admin-password reset is removed.
+
+## Session ledger
+
+The ledger records each seat buy-in, applied host top-up, cash-out on standing/leaving/removal, and heads-up starting-stack adjustments. Queued additions are recorded only when applied. It uses a separate player ID, so repeated buy-ins by a member aggregate while two players with the same name remain distinct. Entries survive hands, reconnects and lobby resets. Virtual-card tables do not maintain chip ledgers.
+
+All table members can view and download the session ledger as JSON. A final snapshot is saved in the departing player's browser session, including the last cash-out, and appears in the directory as Previous game. These are chip-accounting records, not payment transfers. Server ledgers are in memory and disappear when the table is deleted or the server restarts; download a copy for longer-term records.
 
 ## Next priorities
 
 - Durable table/session storage so games survive backend deploys and restarts.
 - Disconnect grace periods, automatic check/fold, and host recovery if someone never returns. Currently an active hand can remain paused indefinitely.
-- Sit-out / sit-back-in controls, seat-request cancellation, and host transfer without leaving.
-- Private/unlisted games and optional access codes.
-- A persistent buy-in/cash-out ledger and session results. Current chip changes appear in the current action log, which resets each hand.
+- Seat-request cancellation and private invite-key rotation.
+- Durable ledger storage across server restarts and completed-session results.
 - Broader poker-rules regression coverage (short all-in raises, split/odd-chip pots, and disconnections at every betting phase).

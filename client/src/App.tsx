@@ -50,7 +50,7 @@ function App() {
     s.on('tables', setTables);
     s.on('tableSession', data => sessionStorage.setItem('pokerSession', JSON.stringify(data)));
     const clearSession = () => { sessionStorage.removeItem('pokerSession'); setGameState(null); setMyIndex(-1); };
-    s.on('tableLeft', () => { clearSession(); setError(null); });
+    s.on('tableLeft', data => { if (data?.ledger) sessionStorage.setItem('lastPokerLedger', JSON.stringify(data)); clearSession(); setError(null); });
     s.on('sessionExpired', () => { clearSession(); setError('Your previous game expired. Create or join a game.'); });
 
     s.on('assignPlayer', (data: { index: number; name: string }) => {
@@ -68,7 +68,8 @@ function App() {
       setError(data.message);
     });
 
-    s.on('kicked', (data: { message: string }) => {
+    s.on('kicked', (data: { message: string; ledger?: GameState['ledger']; tableCode?: string }) => {
+      if (data.ledger) sessionStorage.setItem('lastPokerLedger', JSON.stringify({ ledger: data.ledger, tableCode: data.tableCode }));
       sessionStorage.removeItem('pokerSession');
       setError(data.message);
       setGameState(null);

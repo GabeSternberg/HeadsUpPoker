@@ -80,6 +80,8 @@ function PlayerArea({
           </div>
         )}
         <span className="player-name">{displayName}{isMe ? ' (You)' : ''}</span>
+        {player.sittingOut && <span className="away-tag">SITTING OUT</span>}
+        {player.sitOutNextHand && <span className="away-tag">OUT NEXT HAND</span>}
         {!player.connected && gameState.paused && <span className="away-tag">AWAY</span>}
         {!player.connected && !gameState.paused && <span className="disconnected-tag">DISCONNECTED</span>}
         {hand && player.isDealer && <span className="marker dealer-marker">D</span>}

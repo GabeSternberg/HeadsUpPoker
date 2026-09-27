@@ -7,10 +7,11 @@ import { syncAvatarPlayerNames } from './displayNames';
 interface Member { id: string; token: string; socketId: string; name: string; seat: number }
 interface SeatRequest { token: string; seat: number; chips?: number }
 interface LedgerEntry { id: string; playerId: string; name: string; type: 'buy-in' | 'cash-out'; amount: number; reason: string; timestamp: string }
+interface ChipChange { type: 'add' | 'remove' | 'set'; amount: number }
 interface Table {
   private: boolean; accessKey: string; ledger: LedgerEntry[];
   code: string; room: Room; host: string; members: Map<string, Member>;
-  requests: SeatRequest[]; additions: Map<number, number>; updated: number;
+  requests: SeatRequest[]; additions: Map<number, ChipChange>; updated: number;
 }
 const MAX_CHIPS = 1_000_000;
 const chipsValid = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= MAX_CHIPS;
@@ -50,13 +51,24 @@ export function setupSocketHandlers(io: Server): void {
       t.requests = t.requests.filter(r => r !== request);
       t.room.actionLog.push(`${m.name} seated with ${request.chips} chips`);
     }
-    for (const [index, amount] of t.additions) {
+    for (const [index, change] of t.additions) {
       const p = t.room.players[index];
-      if (p) {
-        const m = [...t.members.values()].find(m => m.seat === index);
-        if (m) record(t, m, 'buy-in', amount, 'Host top-up');
-        p.stack += amount; t.room.actionLog.push(`Host added ${amount} chips to ${p.name}`); }
+      if (!p) continue;
+      const next = change.type === 'set' ? change.amount : p.stack + (change.type === 'add' ? change.amount : -change.amount);
+      if (next < 0 || next > MAX_CHIPS) {
+        const message = `Chip change for ${p.name} cancelled: the final stack must be between 0 and ${MAX_CHIPS}.`;
+        t.room.actionLog.push(message);
+        const host = t.members.get(t.host);
+        if (host) io.to(host.socketId).emit('actionError', { message });
+        continue;
+      }
+      const difference = next - p.stack;
+      const m = [...t.members.values()].find(m => m.seat === index);
+      if (m) record(t, m, difference >= 0 ? 'buy-in' : 'cash-out', Math.abs(difference), change.type === 'add' ? 'Host top-up' : change.type === 'remove' ? 'Host chip removal' : 'Host set stack');
+      p.stack = next;
+      t.room.actionLog.push(`Host ${change.type === 'set' ? `set ${p.name}'s stack to ${next}` : `${change.type === 'add' ? 'added' : 'removed'} ${change.amount} chips ${change.type === 'add' ? 'to' : 'from'} ${p.name}`}`);
     }
+    if (t.room.mode === 'headsup' && t.room.players.filter(p => p && p.stack > 0).length === 2) t.room.matchOver = false;
     t.additions.clear();
   }
   function broadcast(t: Table) {
@@ -73,7 +85,8 @@ export function setupSocketHandlers(io: Server): void {
         seatRequests: m.token === t.host ? t.requests.map(r => ({
           id: String(r.seat), seat: r.seat, name: t.members.get(r.token)?.name, approved: r.chips !== undefined,
         })) : [],
-        pendingChips: Object.fromEntries(t.additions),
+        pendingChips: Object.fromEntries([...t.additions].filter(([, change]) => change.type === 'add').map(([index, change]) => [index, change.amount])),
+        pendingChipChanges: Object.fromEntries(t.additions),
         isPrivate: t.private, accessKey: t.private ? t.accessKey : '',
         ledger: t.room.mode === 'virtualcards' ? [] : t.ledger,
         hostCandidates: m.token === t.host ? [...t.members.values()].filter(candidate => candidate.token !== t.host && io.sockets.sockets.has(candidate.socketId)).map(candidate => ({ id: candidate.id, name: candidate.name })) : [],
@@ -170,12 +183,24 @@ export function setupSocketHandlers(io: Server): void {
       request.chips = data.chips; broadcast(t);
     });
     on('denySeat', (data, t) => { if (hostOnly()) { t.requests = t.requests.filter(r => String(r.seat) !== data.id); broadcast(t); } });
-    on('addChips', (data, t) => {
+    function changeChips(type: ChipChange['type'], data: any, t: Table) {
       if (!hostOnly()) return;
-      if (!Number.isInteger(data.seat) || !t.room.players[data.seat] || !chipsValid(data.chips)) return error('Choose a player and a valid chip amount.');
-      const total = (t.additions.get(data.seat) ?? 0) + data.chips;
-      if (total + t.room.players[data.seat]!.stack > MAX_CHIPS) return error('Stack limit is 1,000,000 chips.');
-      t.additions.set(data.seat, total); broadcast(t);
+      if (t.room.mode === 'virtualcards') return error('Virtual-card tables do not use chips.');
+      if (!Number.isInteger(data.seat) || data.seat < 0 || !t.room.players[data.seat] ||
+        !(chipsValid(data.chips) || (type === 'set' && data.chips === 0))) return error('Choose a player and a valid whole chip amount (set stack can be zero).');
+      const pending = t.additions.get(data.seat);
+      if (pending && !(pending.type === 'add' && type === 'add')) return error('Cancel the queued chip change before entering another.');
+      const amount = data.chips + (pending?.amount ?? 0);
+      const stack = t.room.players[data.seat]!.stack;
+      if (amount > MAX_CHIPS || (!inHand(t) && ((type === 'remove' && amount > stack) || (type === 'add' && stack + amount > MAX_CHIPS)))) return error('The resulting stack must be between 0 and 1,000,000 chips.');
+      t.additions.set(data.seat, { type, amount }); broadcast(t);
+    }
+    on('addChips', (data, t) => changeChips('add', data, t));
+    on('removeChips', (data, t) => changeChips('remove', data, t));
+    on('setChips', (data, t) => changeChips('set', data, t));
+    on('cancelChipChange', (data, t) => {
+      if (!hostOnly()) return;
+      t.additions.delete(data.seat); broadcast(t);
     });
     on('updateSettings', (data, t) => {
       if (!hostOnly() || t.room.gameStarted) return;

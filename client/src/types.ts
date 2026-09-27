@@ -90,6 +90,7 @@ export interface GameState {
   seatRequest: { seat: number; approved: boolean } | null;
   seatRequests: { id: string; seat: number; name: string; approved: boolean }[];
   pendingChips: Record<number, number>;
+  pendingChipChanges: Record<number, { type: 'add' | 'remove' | 'set'; amount: number }>;
   players: (PlayerInfo | null)[];
   settings: { startingSum: number; bigBlind: number; uiMode: 'mobile' | 'pc' };
   gameStarted: boolean;

@@ -23,7 +23,7 @@ Open http://localhost:5173. Create a game, share its invite link or six-characte
 - Create a game in a category; the creator is the host. The category is fixed for that table.
 - Heads-up joiners automatically take an available seat before a hand. Multi-handed joiners watch first and request a specific seat.
 - The host approves/declines seat requests and sets each approved player's buy-in. Players ready up to start with at least two funded players.
-- The host can add chips to any seated player. During a hand, additions and seat approvals queue until the hand finishes. They never alter active-hand stacks or side-pot accounting.
+- The host can add chips, remove chips, or set an exact stack (including zero) for any seated player. During a hand, chip changes and seat approvals queue until the hand finishes. Set stack targets the final balance; Remove subtracts from the final balance. Queued changes can be cancelled. A change that would leave the final stack below zero or above 1,000,000 is cancelled and logged. They never alter active-hand stacks or side-pot accounting.
 - The default buy-in setting supplies the approval form's default amount; it does not overwrite approved multi-handed stacks. Use Add chips for existing stacks.
 - Only the host can change shared settings, pause/resume, reset to the lobby, remove players, or control virtual-card dealing. Anyone seated can request the next hand once the previous hand ends.
 - Leaving or removing a seated player is allowed between hands. The host role passes to another connected member when the host leaves, or to a remaining member if everyone else is offline.
@@ -54,7 +54,7 @@ Public games appear in the table directory. Private games are hidden and require
 
 ## Session ledger
 
-The ledger records each seat buy-in, applied host top-up, cash-out on standing/leaving/removal, and heads-up starting-stack adjustments. Queued additions are recorded only when applied. It uses a separate player ID, so repeated buy-ins by a member aggregate while two players with the same name remain distinct. Entries survive hands, reconnects and lobby resets. Virtual-card tables do not maintain chip ledgers.
+The ledger records each seat buy-in, applied host top-up, host stack adjustments, cash-out on standing/leaving/removal, and heads-up starting-stack adjustments. Queued chip changes are recorded only when applied. Host reductions appear as cash-outs; increases appear as buy-ins, with the adjustment reason preserved. It uses a separate player ID, so repeated buy-ins by a member aggregate while two players with the same name remain distinct. Entries survive hands, reconnects and lobby resets. Virtual-card tables do not maintain chip ledgers.
 
 All table members can view and download the session ledger as JSON. A final snapshot is saved in the departing player's browser session, including the last cash-out, and appears in the directory as Previous game. These are chip-accounting records, not payment transfers. Server ledgers are in memory and disappear when the table is deleted or the server restarts; download a copy for longer-term records.
 

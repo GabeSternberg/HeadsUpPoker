@@ -181,3 +181,56 @@ test('private invitations, sit out/back in, host transfer and reconciled session
     state = await send(resumed, 'addChips', { seat: 1, chips: 1 }); reconcile(state);
   } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
 });
+
+test('host remove/set chips validates bounds, queues safely, and reconciles ledger', async () => {
+  const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
+  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const port = (http.address() as any).port;
+  const sockets: any[] = [];
+  async function client() {
+    const s = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], reconnection: false });
+    sockets.push(s); await event(s, 'connect'); return s;
+  }
+  async function send(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'gameState'); s.emit(command, data); return result;
+  }
+  async function reject(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'actionError'); s.emit(command, data); return result;
+  }
+  const reconcile = (state: any) => {
+    const balance = state.ledger.reduce((n: number, e: any) => n + (e.type === 'buy-in' ? e.amount : -e.amount), 0);
+    assert.equal(balance, state.players.reduce((n: number, p: any) => n + (p?.stack ?? 0), 0) + (state.hand?.pot ?? 0));
+  };
+  try {
+    const host = await client(), guest = await client();
+    let state = await send(host, 'createTable', { mode: 'headsup', name: 'Host' });
+    await send(guest, 'joinGame', { code: state.tableCode, name: 'Guest' });
+    for (const eventName of ['setChips', 'removeChips', 'cancelChipChange']) await reject(guest, eventName, { seat: 0, chips: 100 });
+    for (const chips of [-1, 1.5, 1000001, '100']) await reject(host, 'setChips', { seat: 1, chips });
+    await reject(host, 'removeChips', { seat: 1, chips: 1001 });
+    state = await send(host, 'removeChips', { seat: 1, chips: 200 });
+    assert.equal(state.players[1].stack, 800); assert.equal(state.ledger.at(-1).reason, 'Host chip removal'); reconcile(state);
+    state = await send(host, 'setChips', { seat: 1, chips: 0 });
+    assert.equal(state.players[1].stack, 0); assert.equal(state.ledger.at(-1).amount, 800); reconcile(state);
+    state = await send(host, 'setChips', { seat: 1, chips: 500 }); reconcile(state);
+    await send(host, 'toggleReady'); state = await send(guest, 'toggleReady');
+    const current = state.players[1].stack, ledgerSize = state.ledger.length;
+    state = await send(host, 'setChips', { seat: 1, chips: 250 });
+    assert.equal(state.players[1].stack, current); assert.equal(state.ledger.length, ledgerSize);
+    assert.deepEqual(state.pendingChipChanges[1], { type: 'set', amount: 250 });
+    await reject(host, 'removeChips', { seat: 1, chips: 100 });
+    state = await send(host, 'action', { type: 'fold' });
+    assert.equal(state.players[1].stack, 250); assert.equal(state.ledger.at(-1).reason, 'Host set stack'); reconcile(state);
+    await send(host, 'nextHand');
+    state = await send(host, 'removeChips', { seat: 0, chips: 100 });
+    assert.equal(state.pendingChipChanges[0].amount, 100);
+    state = await send(host, 'cancelChipChange', { seat: 0 }); assert.equal(state.pendingChipChanges[0], undefined);
+    state = await send(host, 'removeChips', { seat: 0, chips: 2000 });
+    const entriesBeforeInvalidRemoval = state.ledger.length;
+    state = await send(guest, 'action', { type: 'fold' });
+    assert.equal(state.ledger.length, entriesBeforeInvalidRemoval);
+    assert.ok(state.actionLog.some((line: string) => line.includes('cancelled'))); reconcile(state);
+    state = await send(host, 'removeChips', { seat: 0, chips: 100 }); reconcile(state);
+    assert.equal(state.ledger.at(-1).amount, 100);
+  } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
+});

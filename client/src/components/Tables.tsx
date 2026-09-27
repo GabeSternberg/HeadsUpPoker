@@ -45,7 +45,7 @@ export function TableDirectory({ socket, tables, connected }: { socket: Socket |
 export function TableControls({ socket, state }: { socket: Socket | null; state: GameState }) {
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
-  const amountInput = (key: string) => <input type="number" min={1} max={1000000} aria-label="Chip amount" value={amounts[key] ?? state.settings.startingSum} onChange={e => setAmounts({ ...amounts, [key]: e.target.value })} />;
+  const amountInput = (key: string, min = 1) => <input type="number" min={min} max={1000000} aria-label="Chip amount" value={amounts[key] ?? state.settings.startingSum} onChange={e => setAmounts({ ...amounts, [key]: e.target.value })} />;
   const amount = (key: string) => Number(amounts[key] ?? state.settings.startingSum);
   const me = state.players[state.myIndex];
   const active = !!state.hand && !state.hand.handOver;
@@ -67,15 +67,23 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
     </div>}
     {state.isHost && <details open={state.seatRequests.length > 0}>
       <summary>Host controls · seats & chips</summary>
-      <p>Approvals and chip additions during a hand take effect after it ends.</p>
+      <p>Approvals and chip changes during a hand take effect after it ends. Set stack sets the final balance; Remove subtracts from the final balance.</p>
       {state.seatRequests.map(r => <div className="table-controls" key={r.id}>
         <span>{r.name} · seat {r.seat + 1}</span>
         {r.approved ? <span>Approved · waiting for next hand</span> : <>{amountInput(`request-${r.id}`)}<button className="btn" onClick={() => socket?.emit('approveSeat', { id: r.id, chips: amount(`request-${r.id}`) })}>Approve seat</button></>}
         <button className="btn" onClick={() => socket?.emit('denySeat', { id: r.id })}>Decline</button>
       </div>)}
-      {state.players.map((p, i) => p && <div className="table-controls" key={i}>
-        <span>{p.name}: {p.stack} chips{state.pendingChips[i] ? ` (+${state.pendingChips[i]} queued)` : ''}</span>
-        {amountInput(`player-${i}`)}<button className="btn" onClick={() => socket?.emit('addChips', { seat: i, chips: amount(`player-${i}`) })}>Add chips</button>
+      {state.mode !== 'virtualcards' && state.players.map((p, i) => p && <div className="table-controls" key={i}>
+        <span>{p.name}: {p.stack} chips</span>
+        {state.pendingChipChanges[i] ? <>
+          <span>Queued: {state.pendingChipChanges[i].type} {state.pendingChipChanges[i].amount} chips after this hand</span>
+          <button className="btn" onClick={() => socket?.emit('cancelChipChange', { seat: i })}>Cancel chip change</button>
+        </> : <>
+          {amountInput(`player-${i}`, 0)}
+          <button className="btn" onClick={() => socket?.emit('addChips', { seat: i, chips: amount(`player-${i}`) })}>Add chips</button>
+          <button className="btn" onClick={() => socket?.emit('removeChips', { seat: i, chips: amount(`player-${i}`) })}>Remove chips</button>
+          <button className="btn" onClick={() => socket?.emit('setChips', { seat: i, chips: amount(`player-${i}`) })}>Set stack</button>
+        </>}
       </div>)}
       <label>Transfer host to <select aria-label="Transfer host to" defaultValue="" onChange={e => {
         const id = e.target.value;
@@ -110,7 +118,7 @@ function Ledger({ entries, code, previous = false }: { entries: LedgerEntry[]; c
   };
   return <details className="session-ledger">
     <summary>{previous ? `Previous game ${code}` : 'Session'} buy-in / cash-out ledger</summary>
-    <p>Chip amounts only. Queued top-ups appear when applied. Cashing out returns your full stack and frees your seat.</p>
+    <p>Chip amounts only. Chip changes appear when applied; reductions are recorded as cash-outs. Cashing out returns your full stack and frees your seat.</p>
     <p>This ledger lasts for this server session. Download a copy before the game ends.</p>
     <button className="btn" onClick={download}>Download ledger</button>
     <div className="ledger-scroll"><table><thead><tr><th>Player</th><th>Bought in</th><th>Cashed out</th></tr></thead><tbody>

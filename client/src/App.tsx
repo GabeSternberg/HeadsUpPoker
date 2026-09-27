@@ -5,15 +5,18 @@ import { TableDirectory, TableControls } from './components/Tables';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
 import VirtualCards from './components/VirtualCards';
+import HeadsUpControls from './components/HeadsUpControls';
 
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
-function App() {
+function PokerSession({ classic }: { classic: boolean }) {
+  const sessionKey = classic ? 'pokerDefaultSession' : 'pokerSession';
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [myIndex, setMyIndex] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
+  const [resetRequest, setResetRequest] = useState(0);
 
   const [tables, setTables] = useState<TableSummary[]>([]);
   const [connected, setConnected] = useState(false);
@@ -43,15 +46,16 @@ function App() {
     setSocket(s);
     s.on('connect', () => {
       setConnected(true);
-      const saved = sessionStorage.getItem('pokerSession');
-      if (saved) { try { s.emit('resumeTable', JSON.parse(saved)); } catch { sessionStorage.removeItem('pokerSession'); } }
+      const saved = sessionStorage.getItem(sessionKey);
+      if (saved) { try { s.emit('resumeTable', JSON.parse(saved)); } catch { sessionStorage.removeItem(sessionKey); if (classic) s.emit('joinDefault'); } }
+      else if (classic) s.emit('joinDefault');
     });
-    s.on('disconnect', reason => { setConnected(false); if (reason === 'io server disconnect') { sessionStorage.removeItem('pokerSession'); setGameState(null); setMyIndex(-1); s.connect(); } });
+    s.on('disconnect', reason => { setConnected(false); if (reason === 'io server disconnect') { sessionStorage.removeItem(sessionKey); setGameState(null); setMyIndex(-1); s.connect(); } });
     s.on('tables', setTables);
-    s.on('tableSession', data => sessionStorage.setItem('pokerSession', JSON.stringify(data)));
-    const clearSession = () => { sessionStorage.removeItem('pokerSession'); setGameState(null); setMyIndex(-1); };
+    s.on('tableSession', data => sessionStorage.setItem(sessionKey, JSON.stringify(data)));
+    const clearSession = () => { sessionStorage.removeItem(sessionKey); setGameState(null); setMyIndex(-1); };
     s.on('tableLeft', data => { if (data?.ledger) sessionStorage.setItem('lastPokerLedger', JSON.stringify(data)); clearSession(); setError(null); });
-    s.on('sessionExpired', () => { clearSession(); setError('Your previous game expired. Create or join a game.'); });
+    s.on('sessionExpired', () => { clearSession(); if (classic) s.emit('joinDefault'); else setError('Your previous game expired. Create or join a game.'); });
 
     s.on('assignPlayer', (data: { index: number; name: string }) => {
       setMyIndex(data.index);
@@ -70,7 +74,7 @@ function App() {
 
     s.on('kicked', (data: { message: string; ledger?: GameState['ledger']; tableCode?: string }) => {
       if (data.ledger) sessionStorage.setItem('lastPokerLedger', JSON.stringify({ ledger: data.ledger, tableCode: data.tableCode }));
-      sessionStorage.removeItem('pokerSession');
+      sessionStorage.removeItem(sessionKey);
       setError(data.message);
       setGameState(null);
       setMyIndex(-1);
@@ -115,7 +119,9 @@ function App() {
 
   const handleResetMatch = useCallback(() => {
     if (!socket) return;
-    socket.emit('resetMatch');
+    if (classic) {
+      setResetRequest(value => value + 1);
+    } else socket.emit('resetMatch');
   }, [socket]);
 
   const handleNextHand = useCallback(() => {
@@ -185,8 +191,8 @@ function App() {
   }, [socket]);
 
   if (!gameState) {
-    return <div className="app"><h1>Poker tables</h1>{error && <div className="error">{error}</div>}
-      <TableDirectory socket={socket} tables={tables} connected={connected} /></div>;
+    return <div className="app"><h1>{classic ? 'Heads-Up Poker' : 'Poker tables'}</h1>{error && <div className="error">{error}</div>}
+      {classic ? <p>Connecting to the heads-up table…</p> : <TableDirectory socket={socket} tables={tables} connected={connected} />}</div>;
   }
   const isVC = gameState.mode === 'virtualcards';
   const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Multi-handed Poker' : 'Heads-Up Poker';
@@ -196,11 +202,11 @@ function App() {
     <div className="app">
       <h1>{title}</h1>
       {!connected && <div className="error">Disconnected — reconnecting to your seat…</div>}
-      <TableControls socket={socket} state={gameState} />
+      {classic ? <HeadsUpControls socket={socket} state={gameState} resetRequest={resetRequest} /> : <TableControls socket={socket} state={gameState} />}
       {error && <div className="error">{error}</div>}
 
       {/* VC mode: show table when cards are dealt, lobby otherwise */}
-      {myIndex < 0 && !gameState.gameStarted ? <p>Watching this table. Request a seat to join the game.</p> : isVC && gameState.vcState ? (
+      {classic && myIndex < 0 ? null : myIndex < 0 && !gameState.gameStarted ? <p>Watching this table. Request a seat to join the game.</p> : isVC && gameState.vcState ? (
         <VirtualCards
           gameState={gameState}
           myIndex={myIndex}
@@ -271,6 +277,21 @@ function App() {
       )}
     </div>
   );
+}
+
+function App() {
+  const invited = new URLSearchParams(location.search).has('table');
+  const [tab, setTab] = useState<'headsup' | 'multiplayer'>(invited ? 'multiplayer' : 'headsup');
+  const [visited, setVisited] = useState({ headsup: !invited, multiplayer: invited });
+  const switchTab = (next: 'headsup' | 'multiplayer') => { setTab(next); setVisited(previous => ({ ...previous, [next]: true })); };
+  return <>
+    <nav className="app-tabs" aria-label="Game tabs">
+      <button className={`btn ${tab === 'headsup' ? 'active' : ''}`} aria-pressed={tab === 'headsup'} onClick={() => switchTab('headsup')}>Heads-up</button>
+      <button className={`btn ${tab === 'multiplayer' ? 'active' : ''}`} aria-pressed={tab === 'multiplayer'} onClick={() => switchTab('multiplayer')}>Multiplayer</button>
+    </nav>
+    <div hidden={tab !== 'headsup'}>{visited.headsup && <PokerSession classic />}</div>
+    <div hidden={tab !== 'multiplayer'}>{visited.multiplayer && <PokerSession classic={false} />}</div>
+  </>;
 }
 
 export default App;

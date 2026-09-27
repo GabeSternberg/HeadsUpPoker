@@ -234,3 +234,62 @@ test('host remove/set chips validates bounds, queues safely, and reconciles ledg
     assert.equal(state.ledger.at(-1).amount, 100);
   } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
 });
+
+test('default heads-up singleton supports password seat recovery and isolated resets', async () => {
+  const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
+  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const port = (http.address() as any).port;
+  const sockets: any[] = [];
+  async function client() {
+    const s = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], reconnection: false });
+    sockets.push(s); await event(s, 'connect'); return s;
+  }
+  async function send(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'gameState'); s.emit(command, data); return result;
+  }
+  async function reject(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'actionError'); s.emit(command, data); return result;
+  }
+  try {
+    const p1 = await client(), p2 = await client(), watcher = await client(), multi = await client();
+    let state = await send(p1, 'joinDefault');
+    assert.equal(state.isClassic, true); assert.equal(state.myIndex, 0); assert.equal(state.players[0].name, 'Player 1');
+    state = await send(p2, 'joinDefault'); assert.equal(state.myIndex, 1); assert.equal(state.players[1].name, 'Player 2');
+    state = await send(watcher, 'joinDefault'); assert.equal(state.myIndex, -1);
+    const directoryPromise = event(watcher, 'tables');
+    const multiplayer = await send(multi, 'createTable', { mode: 'unlimited', name: 'Separate table' });
+    const listed = await directoryPromise;
+    assert.equal(listed.length, 1); assert.equal(listed[0].code, multiplayer.tableCode);
+    await send(p2, 'updateSettings', { startingSum: 700 }); // either default player can configure
+    await send(p1, 'activateAvatarMode');
+    await send(p1, 'toggleReady'); state = await send(p2, 'toggleReady');
+    assert.equal(state.gameStarted, true); assert.equal(state.players[0].name, 'Gabe'); assert.equal(state.players[1].name, 'Liana');
+    const cards = state.players[1].holeCards, stack = state.players[1].stack;
+    await reject(watcher, 'reclaimDefaultSeat', { seat: 1, password: 'wrong' });
+    await reject(watcher, 'resetDefault', { password: 'wrong' });
+    await reject(p1, 'resetMatch');
+    await reject(p1, 'setChips', { seat: 0, chips: 999 });
+    state = await send(watcher, 'reclaimDefaultSeat', { seat: 1, password: '123' });
+    assert.equal(state.myIndex, 1); assert.deepEqual(state.players[1].holeCards, cards); assert.equal(state.players[1].stack, stack);
+    assert.equal(state.players[0].holeCards, null);
+    // The former seat owner cannot act or reset without the password.
+    p2.emit('action', { type: 'fold' });
+    state = await send(watcher, 'togglePause'); assert.equal(state.hand.handOver, false);
+    await send(watcher, 'togglePause');
+    await reject(watcher, 'reclaimDefaultSeat', { seat: 0, password: '123' });
+    const paused = event(watcher, 'gameState', s => s.paused);
+    p1.disconnect(); await paused;
+    state = await send(p2, 'reclaimDefaultSeat', { seat: 0, password: '123' });
+    assert.equal(state.myIndex, 0); assert.equal(state.players[0].connected, true);
+    await send(p2, 'togglePause');
+    const observer = await client(); await send(observer, 'joinDefault');
+    state = await send(observer, 'resetDefault', { password: '123' });
+    assert.equal(state.gameStarted, false); assert.equal(state.hand, null); assert.equal(state.paused, false);
+    assert.equal(state.players[0].stack, 700); assert.equal(state.players[1].stack, 700);
+    assert.equal(state.players[0].ready, false); assert.equal(state.players[0].name, 'Gabe');
+    const intact = await send(multi, 'addChips', { seat: 0, chips: 10 });
+    assert.equal(intact.players[0].stack, 1010); assert.equal(intact.tableCode, multiplayer.tableCode);
+    const outsider = await client();
+    await reject(outsider, 'joinGame', { code: 'CLASSIC', name: 'Intruder' });
+  } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
+});

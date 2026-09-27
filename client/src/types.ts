@@ -79,6 +79,7 @@ export interface LedgerEntry {
   id: string; playerId: string; name: string; type: 'buy-in' | 'cash-out'; amount: number; reason: string; timestamp: string;
 }
 export interface GameState {
+  isClassic: boolean;
   isPrivate: boolean;
   accessKey: string;
   ledger: LedgerEntry[];

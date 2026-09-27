@@ -9,6 +9,7 @@ interface SeatRequest { token: string; seat: number; chips?: number }
 interface LedgerEntry { id: string; playerId: string; name: string; type: 'buy-in' | 'cash-out'; amount: number; reason: string; timestamp: string }
 interface ChipChange { type: 'add' | 'remove' | 'set'; amount: number }
 interface Table {
+  classic?: boolean;
   private: boolean; accessKey: string; ledger: LedgerEntry[];
   code: string; room: Room; host: string; members: Map<string, Member>;
   requests: SeatRequest[]; additions: Map<number, ChipChange>; updated: number;
@@ -18,6 +19,8 @@ const chipsValid = (value: unknown): value is number => typeof value === 'number
 
 export function setupSocketHandlers(io: Server): void {
   const tables = new Map<string, Table>();
+  const classic: Table = { classic: true, private: true, accessKey: '', ledger: [], code: 'CLASSIC', room: createRoom(), host: '', members: new Map(), requests: [], additions: new Map(), updated: Date.now() };
+  tables.set(classic.code, classic);
   const inHand = (t: Table) => !!t.room.hand && !t.room.hand.handOver;
   const capacity = (t: Table) => t.room.mode === 'headsup' ? 2 : 9;
   function directory() {
@@ -26,7 +29,7 @@ export function setupSocketHandlers(io: Server): void {
       capacity: capacity(t), started: t.room.gameStarted })));
   }
   function record(t: Table, m: Member, type: LedgerEntry['type'], amount: number, reason: string) {
-    if (t.room.mode === 'virtualcards' || amount === 0) return;
+    if (t.classic || t.room.mode === 'virtualcards' || amount === 0) return;
     t.ledger.push({ id: randomUUID(), playerId: m.id, name: m.name, type, amount, reason, timestamp: new Date().toISOString() });
   }
   function cashOut(t: Table, m: Member, reason: string) {
@@ -77,7 +80,7 @@ export function setupSocketHandlers(io: Server): void {
     for (const m of t.members.values()) {
       const state = getClientState(t.room, m.seat);
       io.to(m.socketId).emit('gameState', { ...state,
-        tableCode: t.code, isHost: m.token === t.host, hostName: t.members.get(t.host)?.name,
+        isClassic: !!t.classic, tableCode: t.code, isHost: t.classic ? m.seat >= 0 : m.token === t.host, hostName: t.members.get(t.host)?.name,
         maxSeats: capacity(t), seatRequest: t.requests.find(r => r.token === m.token) ? {
           seat: t.requests.find(r => r.token === m.token)!.seat,
           approved: t.requests.find(r => r.token === m.token)!.chips !== undefined,
@@ -96,7 +99,7 @@ export function setupSocketHandlers(io: Server): void {
   }
   // Abandoned tables expire; no active table is removed.
   const cleanup = setInterval(() => {
-    for (const [code, t] of tables) if (Date.now() - t.updated > 24 * 60 * 60 * 1000 &&
+    for (const [code, t] of tables) if (!t.classic && Date.now() - t.updated > 24 * 60 * 60 * 1000 &&
       [...t.members.values()].every(m => !io.sockets.sockets.has(m.socketId))) tables.delete(code);
     directory();
   }, 60_000);
@@ -108,7 +111,7 @@ export function setupSocketHandlers(io: Server): void {
     let member: Member | undefined;
     const error = (message: string) => socket.emit('actionError', { message });
     const hostOnly = () => {
-      if (table && member?.token === table.host) return true;
+      if (table && member && (table.classic ? member.seat >= 0 : member.token === table.host)) return true;
       error('Only the host can do that.'); return false;
     };
     // Every handler validates membership and malformed payloads before touching state.
@@ -116,6 +119,7 @@ export function setupSocketHandlers(io: Server): void {
       socket.on(event, (data = {}) => {
         if (!table || !member || member.socketId !== socket.id) return;
         if (!data || typeof data !== 'object') return error('Invalid request.');
+        if (table.classic && ['requestSeat', 'approveSeat', 'denySeat', 'addChips', 'removeChips', 'setChips', 'cancelChipChange', 'setSittingOut', 'transferHost', 'cashOut', 'kickPlayer', 'leaveGame', 'leaveTable'].includes(event)) return error('Use the heads-up recovery controls for this table.');
         fn(data, table, member);
       });
     }
@@ -125,6 +129,56 @@ export function setupSocketHandlers(io: Server): void {
       socket.emit('tableSession', { code: t.code, token: m.token });
       broadcast(t);
     }
+    socket.on('joinDefault', () => {
+      if (table) return;
+      const m: Member = { id: randomUUID(), token: randomBytes(24).toString('hex'), socketId: socket.id, name: 'Viewer', seat: -1 };
+      classic.members.set(m.token, m);
+      if (!classic.room.gameStarted) {
+        const index = classic.room.players.findIndex(p => !p);
+        if (index >= 0) {
+          m.name = `Player ${index + 1}`;
+          seat(classic, m, index, classic.room.settings.startingSum);
+          if (!classic.host) classic.host = m.token;
+          if (classic.room.avatarMode) syncAvatarPlayerNames(classic.room);
+        }
+      }
+      attach(classic, m);
+    });
+    on('reclaimDefaultSeat', (data, t, m) => {
+      if (!t.classic) return;
+      if (data.password !== '123') return error('Incorrect password.');
+      if (![0, 1].includes(data.seat)) return error('Choose Player 1 or Player 2.');
+      if (m.seat >= 0 && m.seat !== data.seat) return error('You already control a seat. Use another device or tab to rejoin the other seat.');
+      const previous = [...t.members.values()].find(candidate => candidate.seat === data.seat && candidate !== m);
+      if (previous) previous.seat = -1;
+      if (previous?.token === t.host || !t.host) t.host = m.token;
+      m.seat = data.seat; m.name = `Player ${data.seat + 1}`;
+      const player = t.room.players[data.seat];
+      if (player) { player.id = socket.id; player.connected = true; }
+      else seat(t, m, data.seat, t.room.settings.startingSum);
+      if (t.room.avatarMode) syncAvatarPlayerNames(t.room);
+      socket.emit('tableSession', { code: t.code, token: m.token });
+      broadcast(t);
+    });
+    on('resetDefault', (data, t, m) => {
+      if (!t.classic) return;
+      if (data.password !== '123') return error('Incorrect password.');
+      const old = t.room;
+      t.room = createRoom(); t.room.settings = { ...old.settings };
+      t.room.avatarMode = old.avatarMode; t.room.avatarAssignment = [...old.avatarAssignment];
+      t.additions.clear(); t.requests = []; t.ledger = [];
+      for (const candidate of t.members.values()) {
+        if (candidate.seat < 0) continue;
+        if (io.sockets.sockets.has(candidate.socketId)) seat(t, candidate, candidate.seat, t.room.settings.startingSum);
+        else candidate.seat = -1;
+      }
+      if (m.seat < 0) {
+        const index = t.room.players.findIndex(p => !p);
+        if (index >= 0) { m.name = `Player ${index + 1}`; seat(t, m, index, t.room.settings.startingSum); }
+      }
+      if (t.room.avatarMode) syncAvatarPlayerNames(t.room);
+      broadcast(t);
+    });
     socket.on('createTable', (data = {}) => {
       if (table || !data || !['headsup', 'unlimited', 'virtualcards'].includes(data.mode)) return;
       if (tables.size >= 200) return error('Table limit reached. Please join an existing table.');
@@ -143,7 +197,7 @@ export function setupSocketHandlers(io: Server): void {
     socket.on('joinGame', (data = {}) => {
       if (table || !data || typeof data.code !== 'string') return;
       const t = tables.get(data.code.trim().toUpperCase());
-      if (!t) return error('Game not found. Check the code or create a new game.');
+      if (!t || t.classic) return error('Game not found. Check the code or create a new game.');
       if (t.private) {
         const key = typeof data.accessKey === 'string' ? data.accessKey : '';
         if (Buffer.byteLength(key) !== Buffer.byteLength(t.accessKey) || !timingSafeEqual(Buffer.from(key), Buffer.from(t.accessKey))) return error('This private game requires its invite link or access key.');
@@ -277,7 +331,7 @@ export function setupSocketHandlers(io: Server): void {
     on('rebuy', () => error('Ask the host to add chips using the table controls.'));
     on('vcNextPhase', (_data, t) => { if (hostOnly() && t.room.mode === 'virtualcards') { vcNextPhase(t.room); broadcast(t); } });
     on('vcNextHand', (_data, t) => { if (hostOnly() && t.room.mode === 'virtualcards') { vcDeal(t.room); broadcast(t); } });
-    on('activateAvatarMode', (_data, t) => { if (hostOnly()) { t.room.avatarMode = true; syncAvatarPlayerNames(t.room); broadcast(t); } });
+    on('activateAvatarMode', (_data, t) => { if (hostOnly()) { t.room.avatarMode = true; if (t.classic && t.room.avatarAssignment.every(role => !role)) t.room.avatarAssignment = ['G', 'L']; syncAvatarPlayerNames(t.room); broadcast(t); } });
     on('setAvatarAssignment', (data, t) => {
       if (!hostOnly() || t.room.gameStarted || !t.room.avatarMode || ![0, 1].includes(data.playerIndex) || !['L', 'G'].includes(data.role)) return;
       t.room.avatarAssignment[data.playerIndex] = data.role;
@@ -285,6 +339,7 @@ export function setupSocketHandlers(io: Server): void {
       syncAvatarPlayerNames(t.room); broadcast(t);
     });
     on('resetMatch', (_data, t) => {
+      if (t.classic) return error('Use Reset game with the recovery password.');
       if (!hostOnly()) return;
       if (inHand(t)) return error('Finish the current hand before resetting.');
       const old = t.room; t.room = createRoom();
@@ -323,6 +378,7 @@ export function setupSocketHandlers(io: Server): void {
           table.room.actionLog.push(`${member.name} disconnected. Host can resume after reconnection.`);
         }
       }
+      if (table.classic && member.seat < 0) table.members.delete(member.token);
       broadcast(table);
     });
     directory();

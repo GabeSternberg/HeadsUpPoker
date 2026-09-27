@@ -1536,3 +1536,10 @@ body:has(.mobile-ui) h1 {
 .ledger-scroll { overflow-x: auto; max-height: 320px; margin-top: 12px; }
 .session-ledger table { width: 100%; border-collapse: collapse; text-align: left; }
 .session-ledger th, .session-ledger td { padding: 8px; border-bottom: 1px solid #416454; }
+.app-tabs { display: flex; justify-content: center; gap: 8px; margin: 20px auto 0; }
+.app-tabs .btn { padding: 12px 24px; background: #152d26; color: white; border: 1px solid #416454; }
+.app-tabs .btn.active { background: #286346; border-color: #a5d8b7; }
+.heads-up-controls { width: 100%; max-width: 850px; margin: 12px auto; padding: 16px; box-sizing: border-box; background: #152d26; border-radius: 12px; }
+.heads-up-controls summary { cursor: pointer; padding: 8px 0; }
+.heads-up-controls input { margin: 8px; padding: 8px; max-width: 100%; }
+.heads-up-controls .btn { padding: 10px 14px; background: #286346; color: white; }

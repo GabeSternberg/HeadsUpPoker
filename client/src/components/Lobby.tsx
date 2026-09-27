@@ -85,7 +85,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
                   >G</button>
                 </div>
               )}
-              {gameState.isHost && player && i !== myIndex && (
+              {!gameState.isClassic && gameState.isHost && player && i !== myIndex && (
                 <button className="btn-kick" aria-label={`Remove ${player.name}`} onClick={() => {
                   if (window.confirm(`Remove ${player.name} from this table?`)) onKickPlayer(i);
                 }}>✕</button>

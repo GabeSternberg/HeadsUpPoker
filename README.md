@@ -16,9 +16,20 @@ cd client
 npm run dev
 ```
 
-Open http://localhost:5173. Create a game, share its invite link or six-character code, and join from another tab/device. Each tab has its own session credential; refreshing or reconnecting restores that seat.
+Open http://localhost:5173. The default **Heads-up** tab automatically joins one shared two-player table as Player 1 or Player 2, with no create/join form. The **Multiplayer** tab contains the table directory, private invites, host controls, seat requests, and ledger. An invite URL opens Multiplayer directly. Switching tabs keeps each connection and seat intact; each has its own saved reconnect credential.
 
-## Table flow
+## Default heads-up table
+
+- The first two visitors take the available seats before a game starts. Other visitors see recovery controls.
+- Enter password `123` to rejoin as Player 1 or Player 2. In secret/avatar mode the buttons use the assigned Gabe/Liana names.
+- Reclaiming a seat preserves its chips, cards, betting turn, and avatar. The previous connection becomes a viewer and loses action privileges. A seated player cannot switch to the other seat.
+- Either seated player can adjust lobby settings, configure avatars, pause/resume, and advance hands. Disconnects pause the current hand until both players return and someone resumes.
+- Password `123` also resets the table, even during a hand: clear the hand and stats, restore starting chips, clear ready flags, and return to the lobby. Settings and avatar assignments remain. Connected players keep their seats; disconnected seats are released. An unseated reset caller takes an available seat if there is one.
+- Reset and recovery apply only to this shared table. It is never listed in Multiplayer, and its reset cannot touch multiplayer games.
+
+For Multiplayer, create a game, share its invite link or six-character code, and join from another tab/device.
+
+## Multiplayer table flow
 
 - Create a game in a category; the creator is the host. The category is fixed for that table.
 - Heads-up joiners automatically take an available seat before a hand. Multi-handed joiners watch first and request a specific seat.

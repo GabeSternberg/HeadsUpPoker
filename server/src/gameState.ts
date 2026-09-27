@@ -250,7 +250,7 @@ function occupiedSeats(room: Room): number[] {
 
 /** Get indices of all players with chips > 0 (eligible to play a hand). */
 function activeSeats(room: Room): number[] {
-  return room.players.map((p, i) => (p && p.stack > 0) ? i : -1).filter(i => i >= 0);
+  return room.players.map((p, i) => (p && p.connected && p.stack > 0) ? i : -1).filter(i => i >= 0);
 }
 
 /** Next occupied seat clockwise from `from` (excluding `from`). */
@@ -384,7 +384,7 @@ export function startHand(room: Room): void {
   let bbIdx: number;
   let firstToAct: number;
 
-  if (room.mode === 'headsup') {
+  if (seats.length === 2) {
     // Heads-up: dealer is SB, other is BB. Dealer/SB acts first preflop.
     sbIdx = dealerIdx;
     bbIdx = nextSeat(seats, dealerIdx);
@@ -1131,7 +1131,7 @@ export function getClientState(room: Room, playerIndex: number) {
         ready: p.ready,
         connected: p.connected,
         stack: p.stack,
-        holeCards: (i === playerIndex || isShowdown) ? p.holeCards : null,
+        holeCards: (i === playerIndex || (isShowdown && room.hand!.participants.includes(i) && !room.hand!.playerFolded[i])) ? p.holeCards : null,
         isDealer: room.hand ? room.hand.dealerIndex === i : (room.dealerIndex === i),
         isSB: room.hand ? room.hand.sbIndex === i : false,
         isBB: room.hand ? room.hand.bbIndex === i : false,

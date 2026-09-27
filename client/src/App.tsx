@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { GameState } from './types';
+import { GameState, TableSummary } from './types';
+import { TableDirectory, TableControls } from './components/Tables';
 import Lobby from './components/Lobby';
 import Game from './components/Game';
 import VirtualCards from './components/VirtualCards';
-import { getDisplayName } from './displayNames';
+
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -14,6 +15,9 @@ function App() {
   const [myIndex, setMyIndex] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
 
+  const [tables, setTables] = useState<TableSummary[]>([]);
+  const [connected, setConnected] = useState(false);
+
   // Per-client UI mode (not shared with server)
   const [uiMode, setUiModeState] = useState<'mobile' | 'pc'>(() =>
     (localStorage.getItem('uiMode') as 'mobile' | 'pc') || 'mobile'
@@ -22,10 +26,6 @@ function App() {
     localStorage.setItem('uiMode', mode);
     setUiModeState(mode);
   }, []);
-
-  // Admin reset state (room full recovery)
-  const [adminPassword, setAdminPassword] = useState('');
-  const [adminError, setAdminError] = useState<string | null>(null);
 
   // Secret code state
   const [showCodeInput, setShowCodeInput] = useState(false);
@@ -41,6 +41,17 @@ function App() {
       reconnectionDelay: 1500,
     });
     setSocket(s);
+    s.on('connect', () => {
+      setConnected(true);
+      const saved = sessionStorage.getItem('pokerSession');
+      if (saved) { try { s.emit('resumeTable', JSON.parse(saved)); } catch { sessionStorage.removeItem('pokerSession'); } }
+    });
+    s.on('disconnect', reason => { setConnected(false); if (reason === 'io server disconnect') { sessionStorage.removeItem('pokerSession'); setGameState(null); setMyIndex(-1); s.connect(); } });
+    s.on('tables', setTables);
+    s.on('tableSession', data => sessionStorage.setItem('pokerSession', JSON.stringify(data)));
+    const clearSession = () => { sessionStorage.removeItem('pokerSession'); setGameState(null); setMyIndex(-1); };
+    s.on('tableLeft', () => { clearSession(); setError(null); });
+    s.on('sessionExpired', () => { clearSession(); setError('Your previous game expired. Create or join a game.'); });
 
     s.on('assignPlayer', (data: { index: number; name: string }) => {
       setMyIndex(data.index);
@@ -50,21 +61,15 @@ function App() {
     s.on('gameState', (state: GameState) => {
       setGameState(state);
       setError(null);
-      if (!state.isBlockedJoiner) {
-        setAdminError(null);
-        setAdminPassword('');
-      }
+      setMyIndex(state.myIndex);
     });
 
     s.on('error', (data: { message: string }) => {
       setError(data.message);
     });
 
-    s.on('adminResetError', (data: { message: string }) => {
-      setAdminError(data.message);
-    });
-
     s.on('kicked', (data: { message: string }) => {
+      sessionStorage.removeItem('pokerSession');
       setError(data.message);
       setGameState(null);
       setMyIndex(-1);
@@ -127,11 +132,6 @@ function App() {
     socket.emit('setMode', { mode });
   }, [socket]);
 
-  const handleJoinTable = useCallback(() => {
-    if (!socket) return;
-    socket.emit('joinTable');
-  }, [socket]);
-
   const handleVCNextPhase = useCallback(() => {
     if (!socket) return;
     socket.emit('vcNextPhase');
@@ -183,120 +183,23 @@ function App() {
     socket.emit('togglePause');
   }, [socket]);
 
-  const handleAdminReset = useCallback(() => {
-    if (!socket) return;
-    setAdminError(null);
-    socket.emit('adminReset', { password: adminPassword });
-  }, [socket, adminPassword]);
-
-  if (error && !gameState) {
-    return <div className="app"><div className="error">{error}</div></div>;
-  }
-
   if (!gameState) {
-    return <div className="app"><div className="loading">Connecting to server...</div></div>;
+    return <div className="app"><h1>Poker tables</h1>{error && <div className="error">{error}</div>}
+      <TableDirectory socket={socket} tables={tables} connected={connected} /></div>;
   }
-
   const isVC = gameState.mode === 'virtualcards';
-  const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Poker' : 'Heads-Up Poker';
+  const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Multi-handed Poker' : 'Heads-Up Poker';
 
-  if (gameState.isBlockedJoiner) {
-    return (
-      <div className="app">
-        <h1>{title}</h1>
-        <div className="blocked-join-screen">
-          <div className="blocked-join-card">
-            <h2>Room is Full</h2>
-            <p className="blocked-join-desc">
-              Two players are occupying the table{gameState.gameStarted ? ' (game in progress)' : ''}.
-              If they are stale connections, enter the admin password to reset and join.
-            </p>
-            {gameState.players.some(p => p) && (
-              <div className="blocked-join-players">
-                {gameState.players.map((p, i) => p && (
-                  <span key={i} className="blocked-player-tag">
-                    {getDisplayName(gameState, i)}{p.connected ? '' : ' (disconnected)'}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="admin-reset-form">
-              <input
-                type="password"
-                placeholder="Admin password"
-                value={adminPassword}
-                onChange={e => setAdminPassword(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAdminReset(); }}
-              />
-              <button className="btn btn-admin-reset" onClick={handleAdminReset}>Reset & Join</button>
-            </div>
-            {adminError && <p className="admin-error">{adminError}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // VC pending: player connected but hasn't clicked "Join Table" yet
-  if (gameState.isPending) {
-    return (
-      <div className="app">
-        <h1>{title}</h1>
-        {error && <div className="error">{error}</div>}
-        <div className="vc-join-screen">
-          <div className="vc-join-card">
-            {/* Mode selector — lets pending player switch before joining */}
-            <div className="vc-join-mode-row">
-              <button
-                className={`btn btn-mode ${gameState.mode === 'headsup' ? 'active' : ''}`}
-                onClick={() => handleSetMode('headsup')}
-              >2-Player</button>
-              <button
-                className={`btn btn-mode ${gameState.mode === 'unlimited' ? 'active' : ''}`}
-                onClick={() => handleSetMode('unlimited')}
-              >Unlimited</button>
-              <button
-                className={`btn btn-mode ${gameState.mode === 'virtualcards' ? 'active' : ''}`}
-                onClick={() => handleSetMode('virtualcards')}
-              >Virtual Cards</button>
-            </div>
-
-            {isVC ? (
-              <>
-                <h2>Virtual Card Table</h2>
-                <p className="vc-join-desc">
-                  No physical deck needed — everyone sees their own cards on their device.
-                </p>
-                {gameState.players.some(p => p) && (
-                  <div className="vc-join-players">
-                    <span className="vc-join-label">Already at the table:</span>
-                    {gameState.players.map((p, i) => p && (
-                      <span key={i} className="vc-join-player-tag">{getDisplayName(gameState, i)}</span>
-                    ))}
-                  </div>
-                )}
-                <button className="btn vc-btn-join" onClick={handleJoinTable}>
-                  Join Table
-                </button>
-              </>
-            ) : (
-              <p className="vc-join-desc" style={{ marginTop: 12 }}>
-                Switching to {gameState.mode === 'headsup' ? '2-Player' : 'Unlimited'} mode…
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="app">
       <h1>{title}</h1>
+      {!connected && <div className="error">Disconnected — reconnecting to your seat…</div>}
+      <TableControls socket={socket} state={gameState} />
       {error && <div className="error">{error}</div>}
 
       {/* VC mode: show table when cards are dealt, lobby otherwise */}
-      {isVC && gameState.vcState ? (
+      {myIndex < 0 && !gameState.gameStarted ? <p>Watching this table. Request a seat to join the game.</p> : isVC && gameState.vcState ? (
         <VirtualCards
           gameState={gameState}
           myIndex={myIndex}

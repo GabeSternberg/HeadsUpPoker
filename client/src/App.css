@@ -1520,3 +1520,14 @@ body:has(.mobile-ui) h1 {
 
 .match-settings-panel .btn { width: 100%; min-height: 44px; }
 .match-settings-panel p { margin: 10px 0 0; color: #aaa; font-size: 0.8rem; line-height: 1.4; }
+
+.table-directory, .table-management { width: 100%; max-width: 850px; margin: 16px auto; padding: 20px; box-sizing: border-box; background: #152d26; border: 1px solid #416454; border-radius: 14px; }
+.table-directory label { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.table-directory input, .table-directory select, .table-management input { padding: 10px; border: 1px solid #658373; border-radius: 6px; color: #fff; background: #10231d; max-width: 100%; }
+.table-controls, .table-list-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.table-list-row { justify-content: space-between; padding: 12px; border-bottom: 1px solid #416454; }
+.table-management input { width: 105px; }
+.table-management summary { cursor: pointer; padding: 10px 0; }
+.table-directory .btn, .table-management .btn { background: #286346; color: white; padding: 10px 14px; }
+.table-directory button:disabled, .table-management button:disabled { opacity: .45; cursor: not-allowed; }
+.host-settings { border: 0; padding: 0; margin: 0; min-width: 0; }

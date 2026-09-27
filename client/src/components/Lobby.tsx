@@ -14,11 +14,9 @@ interface LobbyProps {
   onSetUiMode: (mode: 'mobile' | 'pc') => void;
 }
 
-export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode, onKickPlayer, uiMode, onSetUiMode }: LobbyProps) {
+export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode: _onSetMode, onKickPlayer, uiMode, onSetUiMode }: LobbyProps) {
   const [startingSum, setStartingSum] = useState(gameState.settings.startingSum);
   const [bigBlind, setBigBlind] = useState(gameState.settings.bigBlind);
-  const [kickTarget, setKickTarget] = useState<number | null>(null);
-  const [kickPassword, setKickPassword] = useState('');
 
   useEffect(() => {
     setStartingSum(gameState.settings.startingSum);
@@ -52,50 +50,9 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
     }
   };
 
-  const handleKickClick = (i: number) => {
-    setKickTarget(i);
-    setKickPassword('');
-  };
-
-  const handleKickSubmit = (i: number) => {
-    if (kickPassword === '123') {
-      onKickPlayer(i);
-    }
-    setKickTarget(null);
-    setKickPassword('');
-  };
-
-  const handleKickKeyDown = (e: React.KeyboardEvent, i: number) => {
-    if (e.key === 'Enter') handleKickSubmit(i);
-    if (e.key === 'Escape') { setKickTarget(null); setKickPassword(''); }
-  };
-
   return (
     <div className="lobby">
       <h2>Lobby</h2>
-
-      {/* Mode selector */}
-      <div className="mode-selector">
-        <span className="mode-label">Game Mode:</span>
-        <button
-          className={`btn btn-mode ${gameState.mode === 'headsup' ? 'active' : ''}`}
-          onClick={() => onSetMode('headsup')}
-        >
-          2-Player
-        </button>
-        <button
-          className={`btn btn-mode ${gameState.mode === 'unlimited' ? 'active' : ''}`}
-          onClick={() => onSetMode('unlimited')}
-        >
-          Unlimited
-        </button>
-        <button
-          className={`btn btn-mode ${gameState.mode === 'virtualcards' ? 'active' : ''}`}
-          onClick={() => onSetMode('virtualcards')}
-        >
-          Virtual Cards
-        </button>
-      </div>
 
       <div className="players-list">
         {gameState.players.map((player, i) => {
@@ -114,6 +71,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
                   {player.ready ? 'READY' : 'Not Ready'}
                 </span>
               )}
+              {player && !isVC && <span>{player.stack} chips</span>}
               {i === myIndex && <span className="you-tag">(You)</span>}
               {gameState.avatarMode && player && (
                 <div className="avatar-buttons">
@@ -127,23 +85,10 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
                   >G</button>
                 </div>
               )}
-              {player && i !== myIndex && kickTarget !== i && (
-                <button className="btn-kick" onClick={() => handleKickClick(i)}>✕</button>
-              )}
-              {player && i !== myIndex && kickTarget === i && (
-                <div className="kick-confirm">
-                  <input
-                    type="password"
-                    placeholder="password"
-                    value={kickPassword}
-                    onChange={e => setKickPassword(e.target.value)}
-                    onKeyDown={e => handleKickKeyDown(e, i)}
-                    autoFocus
-                    className="kick-password-input"
-                  />
-                  <button className="btn-kick-confirm" onClick={() => handleKickSubmit(i)}>Kick</button>
-                  <button className="btn-kick-cancel" onClick={() => setKickTarget(null)}>Cancel</button>
-                </div>
+              {gameState.isHost && player && i !== myIndex && (
+                <button className="btn-kick" aria-label={`Remove ${player.name}`} onClick={() => {
+                  if (window.confirm(`Remove ${player.name} from this table?`)) onKickPlayer(i);
+                }}>✕</button>
               )}
             </div>
           );
@@ -157,9 +102,10 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
       )}
 
       {!isVC && <div className="settings">
+        <fieldset disabled={!gameState.isHost} className="host-settings">
         <h3>Game Settings</h3>
         <div className="setting-row">
-          <label>Starting Chips:</label>
+          <label>{gameState.mode === 'unlimited' ? 'Default Buy-in:' : 'Starting Chips:'}</label>
           <input
             type="number"
             value={startingSum}
@@ -188,6 +134,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
           <label>Small Blind:</label>
           <span className="computed-value">{smallBlind}</span>
         </div>
+        </fieldset>
         <div className="setting-row">
           <label>UI Mode:</label>
           <div className="ui-mode-buttons">

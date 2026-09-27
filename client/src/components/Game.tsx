@@ -216,7 +216,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
               <circle cx="11.25" cy="12" r="3" />
             </svg>
           </button>
-          {settingsOpen && (
+          {settingsOpen && gameState.isHost && (
             <div className="match-settings-panel" id="match-settings-panel">
               <button type="button" className="btn btn-reset" onClick={() => {
                 setSettingsOpen(false);
@@ -226,7 +226,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
             </div>
           )}
         </div>
-        {!gameState.matchOver && (
+        {!gameState.matchOver && gameState.isHost && (
           <button
             className={`btn btn-pause ${gameState.paused ? 'paused' : ''}`}
             onClick={onTogglePause}
@@ -272,7 +272,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
             <div className="result-message">{hand.resultMessage}</div>
           )}
 
-          {hand?.handOver && !gameState.matchOver && (
+          {hand?.handOver && !gameState.matchOver && myIndex >= 0 && (
             <button className="btn btn-next-hand" onClick={onNextHand}>Next Round</button>
           )}
 
@@ -289,15 +289,15 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           {gameState.matchOver && (
             <div className="match-over">
               <h2>Match Over!</h2>
-              <p>{me && me.stack > 0 ? 'You win!' : 'You lose!'}</p>
-              <button className="btn btn-reset" onClick={onResetMatch}>Play Again</button>
+              <p>{me ? me.stack > 0 ? 'You win!' : 'You lose!' : 'The match has ended.'}</p>
+              {gameState.isHost && <button className="btn btn-reset" onClick={onResetMatch}>Return to lobby</button>}
             </div>
           )}
 
           {gameState.mode === 'unlimited' && isBusted && (
             <div className="busted-actions">
               <p>You're out of chips!</p>
-              <button className="btn btn-rebuy" onClick={onRebuy}>Rebuy</button>
+              <p>Ask the host to add chips in the table controls.</p>
               <button className="btn btn-leave" onClick={onLeave}>Leave Table</button>
             </div>
           )}

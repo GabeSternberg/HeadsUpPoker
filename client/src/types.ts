@@ -69,7 +69,18 @@ export interface LastShowdownInfo {
   resultMessage: string;
 }
 
+export interface TableSummary {
+  code: string; mode: GameState['mode']; host: string; players: number; capacity: number; started: boolean;
+}
+
 export interface GameState {
+  tableCode: string;
+  isHost: boolean;
+  hostName: string;
+  maxSeats: number;
+  seatRequest: { seat: number; approved: boolean } | null;
+  seatRequests: { id: string; seat: number; name: string; approved: boolean }[];
+  pendingChips: Record<number, number>;
   players: (PlayerInfo | null)[];
   settings: { startingSum: number; bigBlind: number; uiMode: 'mobile' | 'pc' };
   gameStarted: boolean;

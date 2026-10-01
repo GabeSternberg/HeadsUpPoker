@@ -5,6 +5,7 @@ import { CardDisplay, CardBack } from './Card';
 import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
 import StatsPanel from './StatsPanel';
+import MultiplayerTable from './MultiplayerTable';
 
 interface GameProps {
   gameState: GameState;
@@ -191,9 +192,10 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
     .filter(({ index }) => index !== myIndex && gameState.players[index] !== null);
 
   const isBusted = me && me.stack <= 0 && hand?.handOver;
+  const multiplayer = gameState.mode === 'unlimited';
 
   return (
-    <div className={`game${uiMode === 'mobile' ? ' mobile-ui' : ''}`}>
+    <div className={`game${multiplayer ? ' mp-game' : ''}${uiMode === 'mobile' ? ' mobile-ui' : ''}`}>
       {gameState.paused && (
         <div className="pause-banner">
           Game Paused — safe to tab out. Click Resume when back.
@@ -238,6 +240,57 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         )}
       </div>
 
+      {multiplayer ? (
+        <>
+          <MultiplayerTable gameState={gameState} myIndex={myIndex} />
+
+          {hand?.handOver && !gameState.matchOver && myIndex >= 0 && (
+            <button className="btn btn-next-hand" onClick={onNextHand}>Next Round</button>
+          )}
+
+          {gameState.matchOver && (
+            <div className="match-over">
+              <h2>Match Over!</h2>
+              <p>{me ? me.stack > 0 ? 'You win!' : 'You lose!' : 'The match has ended.'}</p>
+              {gameState.isHost && <button className="btn btn-reset" onClick={onResetMatch}>Return to lobby</button>}
+            </div>
+          )}
+
+          {isBusted && (
+            <div className="busted-actions">
+              <p>You're out of chips!</p>
+              <p>Ask the host to add chips in the table controls.</p>
+              <button className="btn btn-leave" onClick={onLeave}>Leave Table</button>
+            </div>
+          )}
+
+          {me && isMyTurn && gameState.legalActions && !gameState.paused && (
+            <ActionPanel
+              legalActions={gameState.legalActions}
+              onAction={onAction}
+              pot={hand?.pot ?? 0}
+              currentBet={hand?.currentBet ?? 0}
+              isMobile={uiMode === 'mobile'}
+            />
+          )}
+
+          <div className="mp-last-hand-row">
+            {gameState.lastShowdown && !hand?.showdown && (
+              <div className="last-hand-trigger">
+                <span className="last-hand-btn">Last Showdown</span>
+                <LastHandPreview data={gameState.lastShowdown} gameState={gameState} />
+              </div>
+            )}
+            {gameState.lastFoldedHand && !hand?.showdown && (
+              <div className="last-hand-trigger">
+                <span className="last-hand-btn">Last Hand</span>
+                <LastFoldedPreview data={gameState.lastFoldedHand} gameState={gameState} />
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+      <>
       {/* Opponents (top) */}
       <div className="opponents-row">
         {opponents.map(({ player, index }) => (
@@ -343,6 +396,8 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
             />
           )}
         </div>
+      )}
+      </>
       )}
 
       <div className="ui-mode-toggle-row">

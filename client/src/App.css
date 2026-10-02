@@ -411,8 +411,9 @@ h1::after {
   height: 90px;
   border-radius: 8px;
   font-family: var(--font-display);
-  font-size: 1.4rem;
+  font-size: 1.75rem;
   font-weight: 800;
+  letter-spacing: -0.02em;
   border: 1px solid rgba(0, 0, 0, 0.18);
   background: linear-gradient(180deg, #ffffff, #eef0f3);
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
@@ -996,16 +997,16 @@ h1::after {
   top: 0;
   left: 0;
   width: 1000px;
-  height: 640px;
+  height: 720px;
   transform-origin: top left;
 }
 
 .mp-rail {
   position: absolute;
-  left: 80px;
-  right: 80px;
-  top: 78px;
-  bottom: 78px;
+  left: 54px;
+  right: 54px;
+  top: 56px;
+  bottom: 56px;
   border-radius: 50%;
   background: linear-gradient(180deg, #2b2f38 0%, #14161b 100%);
   box-shadow:
@@ -1016,10 +1017,10 @@ h1::after {
 
 .mp-felt {
   position: absolute;
-  left: 116px;
-  right: 116px;
-  top: 110px;
-  bottom: 110px;
+  left: 88px;
+  right: 88px;
+  top: 88px;
+  bottom: 88px;
   border-radius: 50%;
   background:
     radial-gradient(ellipse at 50% 38%, #23a35d 0%, #157a43 55%, #0b4f2a 100%);
@@ -1060,22 +1061,22 @@ h1::after {
   border: 1px solid rgba(242, 193, 78, 0.4);
   color: var(--gold);
   border-radius: 999px;
-  padding: 5px 16px 5px 6px;
+  padding: 6px 20px 6px 7px;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.15rem;
+  font-size: 1.6rem;
   min-width: 64px;
   backdrop-filter: blur(4px);
 }
 
 .mp-pot-label {
   font-family: var(--font);
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   letter-spacing: 0.12em;
   color: #1b1505;
   background: var(--gold);
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 4px 10px;
 }
 
 .mp-street {
@@ -1092,10 +1093,10 @@ h1::after {
   justify-content: center;
 }
 
-.mp-community .card {
-  width: 60px;
-  height: 84px;
-  font-size: 1.15rem;
+.mp-table .mp-community .card {
+  width: 68px;
+  height: 96px;
+  font-size: 1.7rem;
   animation: mp-deal 0.25s ease-out;
 }
 
@@ -1238,7 +1239,7 @@ h1::after {
 .mp-stack {
   color: var(--gold);
   font-weight: 800;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
 }
 
 .mp-tags {
@@ -1298,23 +1299,23 @@ h1::after {
   justify-content: center;
 }
 
-.mp-hole .card {
-  width: 36px;
-  height: 50px;
-  font-size: 0.7rem;
-  border-radius: 5px;
+.mp-table .mp-hole .card {
+  width: 44px;
+  height: 62px;
+  font-size: 1.05rem;
+  border-radius: 6px;
 }
 
-.mp-hole.mine .card {
-  width: 62px;
-  height: 88px;
-  font-size: 1.15rem;
+.mp-table .mp-hole.mine .card {
+  width: 74px;
+  height: 104px;
+  font-size: 1.85rem;
   border-radius: 8px;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 10px 24px rgba(0, 0, 0, 0.55);
 }
 
-.mp-hole.mine .card:first-child { transform: rotate(-5deg) translateY(2px); }
-.mp-hole.mine .card:last-child { transform: rotate(5deg) translateY(2px); }
+.mp-table .mp-hole.mine .card:first-child { transform: rotate(-5deg) translateY(2px); }
+.mp-table .mp-hole.mine .card:last-child { transform: rotate(5deg) translateY(2px); }
 
 .mp-back {
   background: repeating-linear-gradient(135deg, #2a3a63 0 4px, #1c2846 4px 8px);
@@ -1331,16 +1332,17 @@ h1::after {
   gap: 6px;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
+  font-family: var(--font-display);
   font-weight: 800;
-  font-size: 0.82rem;
-  padding: 3px 10px 3px 3px;
+  font-size: 1.1rem;
+  padding: 4px 13px 4px 4px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .mp-chip-icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background:
     radial-gradient(circle, var(--gold) 0 38%, transparent 40%),
@@ -1349,10 +1351,11 @@ h1::after {
 }
 
 .mp-chip.check {
-  padding: 4px 12px;
+  padding: 6px 14px;
   color: #d6f5e3;
+  font-family: var(--font);
   text-transform: uppercase;
-  font-size: 0.68rem;
+  font-size: 0.78rem;
   letter-spacing: 0.1em;
 }
 
@@ -1416,7 +1419,7 @@ h1::after {
 }
 
 .mp-dock .raise-presets {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .mp-dock .btn-preset {
@@ -1431,7 +1434,8 @@ h1::after {
 }
 
 @media (max-width: 720px) {
-  .mp-dock .raise-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .mp-dock .raise-presets { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .mp-dock .btn-preset { font-size: 0.8rem; padding: 10px 2px; }
   .mp-dock .btn-trio { min-height: 54px; font-size: 0.95rem; }
 }
 
@@ -1721,7 +1725,7 @@ h1::after {
 .mobile-ui .card {
   width: 63px;
   height: 87px;
-  font-size: 1.4rem;
+  font-size: 1.7rem;
   border-radius: 8px;
 }
 

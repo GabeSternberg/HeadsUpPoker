@@ -103,6 +103,25 @@ test('unequal multiway all-ins conserve chips through side-pot settlement', asyn
   }
 });
 
+test('minimum raise is the current bet plus the last raise increment', async () => {
+  const { getLegalActions, processAction, newStreetBetting } = await import('../src/betting');
+  let state = {
+    pot: 30, currentBet: 20, lastRaiseSize: 20, playerBets: [10, 20, 0], playerStacks: [990, 980, 1000],
+    playerActedThisRound: [false, false, false], playerAllIn: [false, false, false], playerFolded: [false, false, false],
+    bigBlind: 20, round: 'preflop' as const, numPlayers: 3,
+  };
+  assert.equal(getLegalActions(state, 2).minRaise, 40, 'open raise is the big blind plus one big blind');
+  state = processAction(state, 2, { type: 'raise', amount: 100 }).newState!;
+  assert.equal(getLegalActions(state, 0).minRaise, 180, 'a raise of 80 makes the next minimum 100 + 80');
+  assert.equal(processAction(state, 0, { type: 'raise', amount: 150 }).valid, false);
+  state = processAction(state, 0, { type: 'raise', amount: 180 }).newState!;
+  assert.equal(getLegalActions(state, 1).minRaise, 260);
+  state = newStreetBetting({ ...state, round: 'flop' });
+  assert.equal(getLegalActions(state, 0).minRaise, 20, 'first bet on a street is at least the big blind');
+  state = processAction(state, 0, { type: 'raise', amount: 50 }).newState!;
+  assert.equal(getLegalActions(state, 1).minRaise, 100, 'facing a bet of 50 the minimum raise is to 100');
+});
+
 test('private invitations, sit out/back in, host transfer and reconciled session ledger', async () => {
   const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
   await new Promise<void>(r => http.listen(0, '127.0.0.1', r));

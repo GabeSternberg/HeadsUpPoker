@@ -72,7 +72,7 @@ function initials(name: string) {
 }
 
 const TABLE_WIDTH = 1000;
-const TABLE_HEIGHT = 640;
+const TABLE_HEIGHT = 720;
 
 export default function MultiplayerTable({
   gameState,
@@ -143,10 +143,11 @@ export default function MultiplayerTable({
           {Array.from({ length: seatCount }, (_, index) => {
             const player = gameState.players[index] ?? null;
             const visual = (index - anchor + seatCount) % seatCount;
-            const spot = seatPoint(visual, seatCount, 42, 40);
-            const cardSpot = seatPoint(visual, seatCount, 29, 23);
-            const betSpot = seatPoint(visual, seatCount, 18, 15);
+            const spot = seatPoint(visual, seatCount, 43, 41);
+            const betSpot = seatPoint(visual, seatCount, 25, 19);
             const isMe = index === myIndex;
+            // Hole cards hug the nameplate: above it for you and lower seats, below it for upper seats.
+            const cardOffset = isMe ? -84 : spot.top >= 50 ? -58 : 66;
             const folded = !!player && !!hand?.playerFolded[index];
             const allIn = !!player && !!hand?.playerAllIn[index];
             const acting = !!hand && !hand.handOver && hand.currentPlayerIndex === index;
@@ -204,7 +205,7 @@ export default function MultiplayerTable({
                     faceUp={showFaces}
                     cards={player.holeCards}
                     mine={isMe}
-                    style={{ left: `${cardSpot.left}%`, top: `${cardSpot.top}%` }}
+                    style={{ left: `${spot.left}%`, top: `calc(${spot.top}% + ${cardOffset}px)` }}
                   />
                 )}
                 <div

@@ -5,10 +5,11 @@ interface ActionPanelProps {
   legalActions: LegalActions;
   onAction: (type: string, amount?: number) => void;
   pot: number;
+  currentBet: number;
   isMobile?: boolean;
 }
 
-export default function ActionPanel({ legalActions, onAction, pot, isMobile }: ActionPanelProps) {
+export default function ActionPanel({ legalActions, onAction, pot, currentBet, isMobile }: ActionPanelProps) {
   const { minRaise, maxRaise } = legalActions;
   const [keypad, setKeypad] = useState(String(minRaise));
 
@@ -77,6 +78,8 @@ export default function ActionPanel({ legalActions, onAction, pot, isMobile }: A
           <div className="raise-presets">
             <button className="btn btn-preset" onClick={() => adjustBy(-10)}>-10</button>
             <button className="btn btn-preset" onClick={() => adjustBy(10)}>+10</button>
+            <button className="btn btn-preset" disabled={currentBet === 0} onClick={() => setPreset(currentBet * 3)}>3x Bet</button>
+            <button className="btn btn-preset" disabled={currentBet === 0} onClick={() => setPreset(currentBet * 4)}>4x Bet</button>
             <button className="btn btn-preset" onClick={() => setPreset(Math.floor(pot / 4))}>1/4 Pot</button>
             <button className="btn btn-preset" onClick={() => setPreset(Math.floor(pot / 2))}>1/2 Pot</button>
             <button className="btn btn-preset" onClick={() => setPreset(Math.floor(pot * 3 / 4))}>3/4 Pot</button>

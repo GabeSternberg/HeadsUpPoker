@@ -56,8 +56,8 @@ export function getLegalActions(state: BettingState, playerIndex: number): {
   const canCall = toCall > 0 && stack > 0;
   const callAmount = Math.min(toCall, stack);
 
-  // Min raise: must at least double the current bet (house rule)
-  const minRaiseTotal = Math.max(state.currentBet * 2, state.currentBet + state.bigBlind);
+  // Min raise: the current bet plus the last raise increment (never less than the big blind)
+  const minRaiseTotal = state.currentBet + Math.max(state.lastRaiseSize, state.bigBlind);
   const maxRaiseTotal = state.playerBets[playerIndex] + stack;
 
   const canRaise = stack > toCall && maxRaiseTotal > state.currentBet;

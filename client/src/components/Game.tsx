@@ -284,6 +284,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
                 legalActions={gameState.legalActions}
                 onAction={onAction}
                 pot={hand?.pot ?? 0}
+              currentBet={hand?.currentBet ?? 0}
                 isMobile={uiMode === 'mobile'}
               />
             </div>
@@ -406,6 +407,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
               legalActions={gameState.legalActions}
               onAction={onAction}
               pot={hand?.pot ?? 0}
+              currentBet={hand?.currentBet ?? 0}
               isMobile={uiMode === 'mobile'}
             />
           )}

@@ -275,12 +275,18 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           )}
 
           {me && isMyTurn && gameState.legalActions && !gameState.paused && (
-            <ActionPanel
-              legalActions={gameState.legalActions}
-              onAction={onAction}
-              pot={hand?.pot ?? 0}
-              isMobile={uiMode === 'mobile'}
-            />
+            <div className="mp-dock">
+              <div className="mp-dock-head">
+                <span>Your action</span>
+                <span>Stack <strong>{me.stack.toLocaleString()}</strong></span>
+              </div>
+              <ActionPanel
+                legalActions={gameState.legalActions}
+                onAction={onAction}
+                pot={hand?.pot ?? 0}
+                isMobile={uiMode === 'mobile'}
+              />
+            </div>
           )}
 
           <div className="mp-last-hand-row">

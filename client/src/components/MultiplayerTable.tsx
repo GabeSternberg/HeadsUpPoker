@@ -64,6 +64,13 @@ function HoleCards({
   );
 }
 
+const SEAT_COLORS = ['#7c5cff', '#e5484d', '#1f9d5a', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#a855f7', '#f97316'];
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return (parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2)).toUpperCase();
+}
+
 const TABLE_WIDTH = 1000;
 const TABLE_HEIGHT = 640;
 
@@ -110,7 +117,7 @@ export default function MultiplayerTable({
           <div className="mp-felt" />
 
           <div className="mp-center">
-            {hand && <div className="mp-pot">{hand.pot}</div>}
+            {hand && <div className="mp-pot"><span className="mp-pot-label">POT</span>{hand.pot.toLocaleString()}</div>}
             {hand && <div className="mp-street">{hand.round}</div>}
             {hand && hand.communityCards.length > 0 && (
               <div className="mp-community">
@@ -140,8 +147,8 @@ export default function MultiplayerTable({
             const cardSpot = seatPoint(visual, seatCount, 29, 23);
             const betSpot = seatPoint(visual, seatCount, 18, 15);
             const isMe = index === myIndex;
-            const folded = !!hand?.playerFolded[index];
-            const allIn = !!hand?.playerAllIn[index];
+            const folded = !!player && !!hand?.playerFolded[index];
+            const allIn = !!player && !!hand?.playerAllIn[index];
             const acting = !!hand && !hand.handOver && hand.currentPlayerIndex === index;
             const bet = hand?.playerBets[index] ?? 0;
             const action = actions.get(index);
@@ -157,10 +164,17 @@ export default function MultiplayerTable({
             const plate = (
               <>
                 {player?.isDealer && <span className="mp-dealer" title="Dealer">D</span>}
-                <div className="mp-name">
-                  {player ? `${names[index]}${isMe ? ' (You)' : ''}` : emptyLabel}
+                {player && (
+                  <span className="mp-avatar" style={{ background: SEAT_COLORS[index % SEAT_COLORS.length] }} aria-hidden="true">
+                    {initials(names[index])}
+                  </span>
+                )}
+                <div className="mp-plate-text">
+                  <div className="mp-name">
+                    {player ? `${names[index]}${isMe ? ' (You)' : ''}` : emptyLabel}
+                  </div>
+                  {player && <div className="mp-stack">{player.stack.toLocaleString()}</div>}
                 </div>
-                {player && <div className="mp-stack">{player.stack}</div>}
                 <div className="mp-tags">
                   {player?.isSB && <span className="mp-tag sb">SB</span>}
                   {player?.isBB && <span className="mp-tag bb">BB</span>}
@@ -176,7 +190,8 @@ export default function MultiplayerTable({
               <div key={index}>
                 {player && inHand && !folded && bet > 0 && (
                   <div className="mp-chip" style={{ left: `${betSpot.left}%`, top: `${betSpot.top}%` }}>
-                    {bet}
+                    <span className="mp-chip-icon" aria-hidden="true" />
+                    {bet.toLocaleString()}
                   </div>
                 )}
                 {player && inHand && !folded && bet === 0 && action === 'check' && (

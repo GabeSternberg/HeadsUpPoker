@@ -2121,6 +2121,161 @@ body:has(.mobile-ui) h1 {
 .table-directory .btn { background: var(--accent); color: #fff; }
 .table-directory .btn:hover:not(:disabled) { background: var(--accent-hover); }
 .host-settings { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+/* Purpose-colored buttons */
+.btn.btn-good, .btn.btn-warn, .btn.btn-info, .btn.btn-bad { border: 1.5px solid; }
+.btn.btn-good { background: rgba(31, 157, 90, 0.16); border-color: var(--accent); color: #7ff0b2; }
+.btn.btn-good:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.btn.btn-warn { background: rgba(245, 158, 11, 0.12); border-color: #f59e0b; color: #fcd17a; }
+.btn.btn-warn:hover:not(:disabled) { background: #f59e0b; color: #1b1505; }
+.btn.btn-info { background: rgba(59, 130, 246, 0.14); border-color: var(--info); color: #a8c8ff; }
+.btn.btn-info:hover:not(:disabled) { background: var(--info); color: #fff; }
+.btn.btn-bad { background: rgba(229, 72, 77, 0.12); border-color: var(--danger); color: #ff9c9f; }
+.btn.btn-bad:hover:not(:disabled) { background: var(--danger); color: #fff; }
+
+.table-management { color: #fff; }
+.table-management .table-controls > span { color: #d6dae2; }
+.table-code { color: #7ff0b2; letter-spacing: 0.08em; }
+
+/* Host controls */
+.host-panel {
+  margin-top: 16px;
+  border: 1px solid rgba(31, 157, 90, 0.45);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(31, 157, 90, 0.08), transparent 120px), var(--bg-sunken);
+  overflow: hidden;
+}
+
+.host-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+  list-style: none;
+}
+
+.host-panel > summary::-webkit-details-marker { display: none; }
+.host-panel > summary::before {
+  content: '▸';
+  color: var(--accent);
+  margin-right: 4px;
+  transition: transform 0.15s;
+}
+.host-panel[open] > summary::before { transform: rotate(90deg); }
+.host-panel > summary > span:first-of-type { margin-right: auto; }
+
+.host-badges { display: flex; gap: 6px; }
+
+.host-count {
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(31, 157, 90, 0.18);
+  border: 1px solid rgba(31, 157, 90, 0.6);
+  color: #7ff0b2;
+}
+
+.host-count.pending {
+  background: rgba(242, 193, 78, 0.16);
+  border-color: rgba(242, 193, 78, 0.7);
+  color: var(--gold);
+}
+
+.host-hint {
+  margin: 0 16px 6px;
+  color: #c3c8d2;
+  font-size: 0.85rem;
+}
+
+.host-section {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.host-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #fff;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.host-empty {
+  color: #aab0bb;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.host-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+}
+
+.host-row.request { border-left-color: var(--gold); background: linear-gradient(90deg, rgba(242, 193, 78, 0.08), var(--surface-2) 40%); }
+.host-row.approved { border-left-color: var(--info); }
+
+.host-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.host-who strong { color: #fff; font-size: 1rem; }
+.host-who > span { color: #c3c8d2; font-size: 0.85rem; }
+.host-who .host-stack { color: var(--gold); font-weight: 800; }
+
+.host-tag {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd17a;
+}
+
+.host-tag.bad { background: rgba(229, 72, 77, 0.16); color: #ff9c9f; }
+
+.host-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.host-actions .btn, .host-section .btn { padding: 8px 14px; font-size: 0.88rem; }
+
+.host-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #d6dae2;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.host-status { color: #a8c8ff; font-size: 0.85rem; font-weight: 600; }
 .session-ledger { margin-top: 16px; }
 .session-ledger summary { cursor: pointer; font-weight: 700; color: var(--muted); }
 .ledger-scroll { overflow-x: auto; max-height: 320px; margin-top: 12px; }

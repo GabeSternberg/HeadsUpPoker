@@ -62,7 +62,7 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
     {state.paused && <p>Game paused. If a player disconnected, wait for them to return, then the host can resume.</p>}
     {state.myIndex < 0 && <div>
       <h3>Choose a seat</h3>
-      <p>{state.seatRequest ? state.seatRequest.approved ? `Seat ${state.seatRequest.seat + 1} approved — you join after this hand.` : `Waiting for host approval for seat ${state.seatRequest.seat + 1}.` : 'You are watching. Request a seat; the host sets your starting chips.'}</p>
+      <p>{state.seatRequest ? state.seatRequest.approved ? `Seat ${state.seatRequest.seat + 1} approved — you'll be dealt in when this hand ends.` : `Waiting for host approval for seat ${state.seatRequest.seat + 1}.` : 'You are watching. Request a seat; the host sets your starting chips.'}</p>
       <div className="table-controls">{state.players.map((p, i) => <button key={i} className="btn" disabled={!!p || !!state.seatRequest} onClick={() => socket?.emit('requestSeat', { seat: i })}>{p ? `${i + 1}: ${p.name}` : `Sit in seat ${i + 1}`}</button>)}</div>
     </div>}
     {state.isHost && <details open={state.seatRequests.length > 0}>
@@ -84,7 +84,12 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
           <button className="btn" onClick={() => socket?.emit('removeChips', { seat: i, chips: amount(`player-${i}`) })}>Remove chips</button>
           <button className="btn" onClick={() => socket?.emit('setChips', { seat: i, chips: amount(`player-${i}`) })}>Set stack</button>
         </>}
+        {i !== state.myIndex && <button className="btn" onClick={() => {
+          const password = window.prompt(`Override password to remove ${p.name}${active ? ' (they fold this hand)' : ''}:`);
+          if (password) socket?.emit('kickPlayer', { targetIndex: i, password });
+        }}>Kick</button>}
       </div>)}
+      {state.mode === 'unlimited' && <BlindSettings socket={socket} state={state} disabled={active} />}
       <label>Transfer host to <select aria-label="Transfer host to" defaultValue="" onChange={e => {
         const id = e.target.value;
         if (id && window.confirm('Transfer all host controls to this member?')) socket?.emit('transferHost', { id });
@@ -96,6 +101,20 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
   </section>;
 }
 
+
+function BlindSettings({ socket, state, disabled }: { socket: Socket | null; state: GameState; disabled: boolean }) {
+  const [bigBlind, setBigBlind] = useState(String(state.settings.bigBlind));
+  const [buyIn, setBuyIn] = useState(String(state.settings.startingSum));
+  return <form className="table-controls" onSubmit={e => {
+    e.preventDefault();
+    socket?.emit('updateSettings', { bigBlind: Number(bigBlind), startingSum: Number(buyIn) });
+  }}>
+    <label>Big blind <input type="number" min={1} max={1000000} value={bigBlind} disabled={disabled} onChange={e => setBigBlind(e.target.value)} /></label>
+    <label>Default buy-in <input type="number" min={1} max={1000000} value={buyIn} disabled={disabled} onChange={e => setBuyIn(e.target.value)} /></label>
+    <button className="btn" disabled={disabled}>Save for next hand</button>
+    <span>Blinds {state.settings.bigBlind / 2}/{state.settings.bigBlind}{disabled ? ' · editable between hands' : ''}</span>
+  </form>;
+}
 
 function PreviousLedger() {
   try {

@@ -39,14 +39,19 @@ test('independent tables, approvals, deferred chips, privacy, reconnect and perm
     assert.match((await denied).message, /host/);
     await send(player, 'requestSeat', { seat: 3 });
     state = await send(host, 'approveSeat', { id: '3', chips: 300 });
-    assert.equal(state.players[3].stack, 300);
+    assert.equal(state.hand, null, 'dealing waits for the host to start');
+    const notHost = event(player, 'actionError'); player.emit('startGame');
+    assert.match((await notHost).message, /host/);
+    const dealt = event(player, 'gameState', s => s.gameStarted);
+    state = await send(host, 'startGame');
+    assert.equal(state.gameStarted, true, 'multi-handed tables deal without a ready step');
+    assert.equal(state.hand.handOver, false);
+    assert.equal(state.players[3].stack + state.hand.playerBets[3], 300);
+    const playerView = await dealt;
+    assert.equal(playerView.players[0].isSB, true, 'two players at multiway table use heads-up blinds');
+    assert.equal(playerView.players[3].isBB, true);
+    assert.equal(playerView.players[0].holeCards, null);
     const viewer = await client(); await send(viewer, 'joinGame', { code, name: 'Viewer' });
-    await send(host, 'toggleReady');
-    state = await send(player, 'toggleReady');
-    assert.equal(state.gameStarted, true);
-    assert.equal(state.players[0].isSB, true, 'two players at multiway table use heads-up blinds');
-    assert.equal(state.players[3].isBB, true);
-    assert.equal(state.players[0].holeCards, null);
     const before = state.players[3].stack;
     state = await send(host, 'addChips', { seat: 3, chips: 200 });
     assert.equal(state.players[3].stack, before); assert.equal(state.pendingChips[3], 200);
@@ -127,37 +132,40 @@ test('private invitations, sit out/back in, host transfer and reconciled session
     assert.ok(accessKey.length >= 32); assert.equal(state.ledger.length, 1); reconcile(state);
     assert.match((await reject(guest, 'joinGame', { code, name: 'Guest' })).message, /invite/);
     await reject(guest, 'joinGame', { code, name: 'Guest', accessKey: 'é'.repeat(32) });
+    state = await send(host, 'setSittingOut', { sittingOut: true }); assert.equal(state.players[0].sittingOut, true);
     const guestSession = event(guest, 'tableSession');
     await send(guest, 'joinGame', { code, accessKey, name: 'Guest' });
     const session = await guestSession;
     await send(guest, 'requestSeat', { seat: 1 });
-    await send(host, 'approveSeat', { id: '1', chips: 400 });
+    state = await send(host, 'approveSeat', { id: '1', chips: 400 });
+    assert.equal(state.hand, null, 'one player sitting in is not enough to deal');
     await send(third, 'joinGame', { code, accessKey, name: 'Third' });
     await send(third, 'requestSeat', { seat: 2 });
     state = await send(host, 'approveSeat', { id: '2', chips: 500 }); reconcile(state);
-    assert.equal(state.ledger.length, 3);
-    state = await send(third, 'setSittingOut', { sittingOut: true }); assert.equal(state.players[2].sittingOut, true);
-    await reject(third, 'toggleReady');
-    await send(host, 'toggleReady'); state = await send(guest, 'toggleReady');
-    assert.equal(state.gameStarted, true); assert.equal(state.players[2].holeCards, null);
-    state = await send(host, 'setSittingOut', { sittingOut: true });
-    assert.equal(state.players[0].sitOutNextHand, true); assert.equal(state.players[0].sittingOut, false);
-    await reject(host, 'cashOut');
+    assert.equal(state.ledger.length, 3); assert.equal(state.hand, null);
+    state = await send(host, 'startGame');
+    assert.equal(state.gameStarted, true, 'host start deals the first hand');
+    assert.equal(state.players[0].isSB, false); assert.equal(state.players[0].isBB, false);
+    state = await send(third, 'setSittingOut', { sittingOut: true });
+    assert.equal(state.players[2].sitOutNextHand, true); assert.equal(state.players[2].sittingOut, false);
+    await reject(third, 'cashOut');
     const ledgerBefore = state.ledger.length;
     state = await send(host, 'addChips', { seat: 1, chips: 150 });
     assert.equal(state.ledger.length, ledgerBefore); reconcile(state);
-    state = await send(host, 'action', { type: 'fold' });
-    assert.equal(state.players[0].sittingOut, true); assert.equal(state.ledger.length, ledgerBefore + 1); reconcile(state);
+    // Seat 1 is dealer and small blind heads-up, so the guest acts first.
+    state = await send(guest, 'action', { type: 'fold' });
+    assert.equal(state.players[2].sittingOut, true); assert.equal(state.ledger.length, ledgerBefore + 1); reconcile(state);
     await reject(guest, 'nextHand'); // only one player is sitting in
-    state = await send(third, 'setSittingOut', { sittingOut: false });
-    const thirdReadyStack = state.players[2].stack;
-    state = await send(guest, 'nextHand');
-    assert.equal(state.players[0].isSB, false); assert.equal(state.players[0].isBB, false);
-    assert.ok(state.players[2].stack < thirdReadyStack); reconcile(state);
-    // New hand is between seats 1 and 2, dealer 1 acts first.
-    state = await send(guest, 'action', { type: 'fold' }); reconcile(state);
-    const guestId = state.hostCandidates; assert.equal(guestId.length, 0);
     state = await send(host, 'setSittingOut', { sittingOut: false });
+    assert.equal(state.hand.handOver, true, 'later hands still wait for Next Round');
+    const hostStack = state.players[0].stack;
+    state = await send(guest, 'nextHand');
+    assert.equal(state.players[2].isSB, false); assert.equal(state.players[2].isBB, false);
+    assert.ok(state.players[0].stack < hostStack); reconcile(state);
+    state = await send(host, 'action', { type: 'fold' }); reconcile(state);
+    state = await send(third, 'setSittingOut', { sittingOut: false });
+    assert.equal(state.hostCandidates.length, 0);
+    state = await send(host, 'cancelChipChange', { seat: 0 });
     const target = state.hostCandidates.find((m: any) => m.name === 'Guest');
     await reject(third, 'transferHost', { id: target.id });
     state = await send(host, 'transferHost', { id: target.id }); assert.equal(state.isHost, false);
@@ -167,7 +175,8 @@ test('private invitations, sit out/back in, host transfer and reconciled session
     state = await send(host, 'cashOut'); assert.equal(state.myIndex, -1); assert.equal(state.players[0], null);
     assert.equal(state.ledger.at(-1).amount, amount); assert.equal(state.ledger.at(-1).type, 'cash-out'); reconcile(state);
     const entryCount = state.ledger.length;
-    await send(guest, 'resetMatch');
+    state = await send(guest, 'resetMatch');
+    assert.equal(state.hand, null, 'reset tables wait for the host to start again');
     state = await send(guest, 'addChips', { seat: 1, chips: 5 }); assert.equal(state.ledger.length, entryCount + 1); reconcile(state);
     guest.disconnect(); await delay();
     const resumed = await client(); state = await send(resumed, 'resumeTable', session);
@@ -232,6 +241,49 @@ test('host remove/set chips validates bounds, queues safely, and reconciles ledg
     assert.ok(state.actionLog.some((line: string) => line.includes('cancelled'))); reconcile(state);
     state = await send(host, 'removeChips', { seat: 0, chips: 100 }); reconcile(state);
     assert.equal(state.ledger.at(-1).amount, 100);
+  } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
+});
+
+test('host override kick works mid-hand: the player folds, then is cashed out', async () => {
+  const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
+  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const port = (http.address() as any).port;
+  const sockets: any[] = [];
+  async function client() {
+    const s = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], reconnection: false });
+    sockets.push(s); await event(s, 'connect'); return s;
+  }
+  async function send(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'gameState'); s.emit(command, data); return result;
+  }
+  async function reject(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'actionError'); s.emit(command, data); return result;
+  }
+  try {
+    const host = await client(), a = await client(), b = await client();
+    let state = await send(host, 'createTable', { mode: 'unlimited', name: 'Host' });
+    const code = state.tableCode;
+    for (const [s, seat, name] of [[a, 1, 'A'], [b, 2, 'B']] as const) {
+      await send(s, 'joinGame', { code, name });
+      await send(s, 'requestSeat', { seat });
+      await send(host, 'approveSeat', { id: String(seat), chips: 500 });
+    }
+    state = await send(host, 'startGame');
+    // Dealer 0, small blind 1, big blind 2; the host acts first.
+    assert.equal(state.hand.currentPlayerIndex, 0);
+    assert.match((await reject(host, 'kickPlayer', { targetIndex: 1, password: 'wrong' })).message, /password/);
+    assert.match((await reject(a, 'kickPlayer', { targetIndex: 2, password: '123' })).message, /host/);
+    const kicked = event(a, 'kicked');
+    state = await send(host, 'kickPlayer', { targetIndex: 1, password: '123' });
+    await kicked;
+    assert.equal(state.hand.handOver, false); assert.ok(state.players[1], 'seat is held until the hand ends');
+    state = await send(host, 'action', { type: 'fold' });
+    assert.equal(state.hand.handOver, true, 'removed player folded automatically');
+    assert.equal(state.players[1], null);
+    assert.equal(state.ledger.at(-1).reason, 'Host removed player');
+    assert.equal(state.ledger.at(-1).amount, 500 - state.settings.bigBlind / 2);
+    state = await send(b, 'setSittingOut', { sittingOut: false });
+    assert.equal(state.players[2].stack, 500 + state.settings.bigBlind / 2);
   } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
 });
 

@@ -16,6 +16,7 @@ interface GameProps {
   onRebuy: () => void;
   onLeave: () => void;
   onTogglePause: () => void;
+  onStartGame: () => void;
   avatarFiles: { L: string[]; G: string[] };
   uiMode: 'mobile' | 'pc';
   onSetUiMode: (mode: 'mobile' | 'pc') => void;
@@ -158,7 +159,7 @@ function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameStat
   );
 }
 
-export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, avatarFiles, uiMode, onSetUiMode }: GameProps) {
+export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, onStartGame, avatarFiles, uiMode, onSetUiMode }: GameProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -244,6 +245,14 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         <>
           <MultiplayerTable gameState={gameState} myIndex={myIndex} />
 
+          {!gameState.gameStarted && gameState.isHost && (
+            <button
+              className="btn btn-next-hand"
+              disabled={gameState.paused || gameState.players.filter(p => p && p.connected && !p.sittingOut && p.stack > 0).length < 2}
+              onClick={onStartGame}
+            >Start game</button>
+          )}
+
           {hand?.handOver && !gameState.matchOver && myIndex >= 0 && (
             <button className="btn btn-next-hand" onClick={onNextHand}>Next Round</button>
           )}
@@ -269,7 +278,6 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
               legalActions={gameState.legalActions}
               onAction={onAction}
               pot={hand?.pot ?? 0}
-              currentBet={hand?.currentBet ?? 0}
               isMobile={uiMode === 'mobile'}
             />
           )}
@@ -391,7 +399,6 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
               legalActions={gameState.legalActions}
               onAction={onAction}
               pot={hand?.pot ?? 0}
-              currentBet={hand?.currentBet ?? 0}
               isMobile={uiMode === 'mobile'}
             />
           )}

@@ -13,6 +13,7 @@ interface Table {
   private: boolean; accessKey: string; ledger: LedgerEntry[];
   code: string; room: Room; host: string; members: Map<string, Member>;
   requests: SeatRequest[]; additions: Map<number, ChipChange>; updated: number;
+  evicted?: Map<number, Member>;
 }
 const MAX_CHIPS = 1_000_000;
 const chipsValid = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= MAX_CHIPS;
@@ -46,6 +47,9 @@ export function setupSocketHandlers(io: Server): void {
   }
   function applyPending(t: Table) {
     if (inHand(t)) return;
+    const evicted = [...(t.evicted?.values() ?? [])];
+    t.evicted?.clear();
+    for (const m of evicted) cashOut(t, m, 'Host removed player');
     for (const p of t.room.players) if (p?.sitOutNextHand) { p.sittingOut = true; p.sitOutNextHand = false; p.ready = false; }
     for (const request of t.requests.filter(r => r.chips !== undefined)) {
       const m = t.members.get(request.token);
@@ -74,8 +78,16 @@ export function setupSocketHandlers(io: Server): void {
     if (t.room.mode === 'headsup' && t.room.players.filter(p => p && p.stack > 0).length === 2) t.room.matchOver = false;
     t.additions.clear();
   }
+  const dealable = (t: Table) => t.room.players.filter(p => p && p.connected && !p.sittingOut && p.stack > 0).length;
+  // Players removed mid-hand keep their seat until it ends, folding whenever the action reaches them.
+  function foldEvicted(t: Table) {
+    for (let guard = 0; guard < 20 && !t.room.paused && inHand(t) && t.evicted?.has(t.room.hand!.currentPlayerIndex); guard++) {
+      handleAction(t.room, t.room.hand!.currentPlayerIndex, { type: 'fold' });
+    }
+  }
   function broadcast(t: Table) {
     t.updated = Date.now();
+    foldEvicted(t);
     applyPending(t);
     for (const m of t.members.values()) {
       const state = getClientState(t.room, m.seat);
@@ -257,7 +269,8 @@ export function setupSocketHandlers(io: Server): void {
       t.additions.delete(data.seat); broadcast(t);
     });
     on('updateSettings', (data, t) => {
-      if (!hostOnly() || t.room.gameStarted) return;
+      if (!hostOnly()) return;
+      if (t.room.mode === 'unlimited' ? inHand(t) : t.room.gameStarted) return error('Change settings between hands.');
       for (const key of ['startingSum', 'bigBlind'] as const) {
         if (data[key] !== undefined) {
           if (!chipsValid(data[key])) return error('Settings must be whole numbers from 1 to 1,000,000.');
@@ -275,7 +288,7 @@ export function setupSocketHandlers(io: Server): void {
       broadcast(t);
     });
     on('toggleReady', (_data, t, m) => {
-      if (m.seat < 0 || t.room.gameStarted) return;
+      if (m.seat < 0 || t.room.gameStarted || t.room.mode === 'unlimited') return;
       const p = t.room.players[m.seat]!;
       if (p.sittingOut) return error('Sit back in before readying.');
       p.ready = !p.ready;
@@ -285,6 +298,15 @@ export function setupSocketHandlers(io: Server): void {
         else { t.room.gameStarted = true; startHand(t.room); }
       }
       broadcast(t);
+    });
+    on('startGame', (_data, t) => {
+      if (!hostOnly()) return;
+      if (t.room.mode !== 'unlimited' || t.room.gameStarted) return;
+      if (t.room.paused) return error('Resume the game before starting.');
+      applyPending(t);
+      if (dealable(t) < 2) return error('Need at least two connected players sitting in with chips.');
+      t.room.gameStarted = true;
+      startHand(t.room); broadcast(t);
     });
     on('action', (data, t, m) => {
       if (m.seat < 0) return;
@@ -306,7 +328,7 @@ export function setupSocketHandlers(io: Server): void {
     });
     on('togglePause', (_data, t) => {
       if (!hostOnly()) return;
-      if (t.room.paused && inHand(t) && t.room.hand?.participants.some(s => !t.room.players[s]?.connected)) return error('Wait for disconnected players to reconnect before resuming.');
+      if (t.room.paused && inHand(t) && t.room.hand?.participants.some(s => !t.room.players[s]?.connected && !t.evicted?.has(s))) return error('Wait for disconnected players to reconnect before resuming.');
       t.room.paused = !t.room.paused; broadcast(t);
     });
     on('setSittingOut', (data, t, m) => {
@@ -361,16 +383,23 @@ export function setupSocketHandlers(io: Server): void {
     }
     on('leaveGame', leave); on('leaveTable', leave);
     on('kickPlayer', (data, t) => {
-      if (!hostOnly() || inHand(t) || !Number.isInteger(data.targetIndex) || data.targetIndex < 0) return;
+      if (!hostOnly() || !Number.isInteger(data.targetIndex) || data.targetIndex < 0) return;
+      if (data.password !== '123') return error('Incorrect override password.');
       const target = [...t.members.values()].find(m => m.seat === data.targetIndex);
-      if (!target || target.token === t.host) return;
-      cashOut(t, target, 'Host removed player');
+      if (!target || target.token === t.host) return error('Choose another seated player.');
+      t.members.delete(target.token);
+      t.requests = t.requests.filter(r => r.token !== target.token);
+      if (inHand(t) && t.room.hand!.participants.includes(target.seat)) {
+        t.room.players[target.seat]!.connected = false;
+        (t.evicted ??= new Map()).set(target.seat, target);
+        t.room.actionLog.push(`${target.name} was removed by the host and folds`);
+      } else cashOut(t, target, 'Host removed player');
       io.to(target.socketId).emit('kicked', { message: 'The host removed you from this table.', ledger: t.ledger, tableCode: t.code });
       io.sockets.sockets.get(target.socketId)?.disconnect(true);
-      t.members.delete(target.token); broadcast(t);
+      broadcast(t);
     });
     socket.on('disconnect', () => {
-      if (!table || !member || member.socketId !== socket.id) return;
+      if (!table || !member || member.socketId !== socket.id || !table.members.has(member.token)) return;
       if (member.seat >= 0) {
         table.room.players[member.seat]!.connected = false;
         if (inHand(table) && table.room.hand!.participants.includes(member.seat)) {

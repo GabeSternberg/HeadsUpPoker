@@ -115,6 +115,11 @@ export default function MultiplayerTable({
                 {hand.communityCards.map((card, i) => <CardDisplay key={i} card={card} />)}
               </div>
             )}
+            {!hand && !gameState.paused && (
+              <div className="mp-status">
+                {gameState.isHost ? 'Press Start game when at least 2 players are seated' : 'Waiting for the host to start the game'}
+              </div>
+            )}
             {gameState.paused && <div className="mp-status">Paused</div>}
             {!gameState.paused && hand && !hand.handOver && hand.currentPlayerIndex !== myIndex && (
               <div className="mp-status">

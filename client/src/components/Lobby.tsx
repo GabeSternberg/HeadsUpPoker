@@ -9,7 +9,7 @@ interface LobbyProps {
   onToggleReady: () => void;
   onSetAvatar: (playerIndex: number, role: 'L' | 'G') => void;
   onSetMode: (mode: 'headsup' | 'unlimited' | 'virtualcards') => void;
-  onKickPlayer: (targetIndex: number) => void;
+  onKickPlayer: (targetIndex: number, password: string) => void;
   uiMode: 'mobile' | 'pc';
   onSetUiMode: (mode: 'mobile' | 'pc') => void;
 }
@@ -87,7 +87,8 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
               )}
               {!gameState.isClassic && gameState.isHost && player && i !== myIndex && (
                 <button className="btn-kick" aria-label={`Remove ${player.name}`} onClick={() => {
-                  if (window.confirm(`Remove ${player.name} from this table?`)) onKickPlayer(i);
+                  const password = window.prompt(`Override password to remove ${player.name}:`);
+                  if (password) onKickPlayer(i, password);
                 }}>✕</button>
               )}
             </div>

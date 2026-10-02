@@ -129,9 +129,14 @@ function PokerSession({ classic }: { classic: boolean }) {
     socket.emit('nextHand');
   }, [socket]);
 
-  const handleKickPlayer = useCallback((targetIndex: number) => {
+  const handleKickPlayer = useCallback((targetIndex: number, password: string) => {
     if (!socket) return;
-    socket.emit('kickPlayer', { targetIndex });
+    socket.emit('kickPlayer', { targetIndex, password });
+  }, [socket]);
+
+  const handleStartGame = useCallback(() => {
+    if (!socket) return;
+    socket.emit('startGame');
   }, [socket]);
 
   const handleSetMode = useCallback((mode: 'headsup' | 'unlimited' | 'virtualcards') => {
@@ -195,7 +200,8 @@ function PokerSession({ classic }: { classic: boolean }) {
       {classic ? <p>Connecting to the heads-up table…</p> : <TableDirectory socket={socket} tables={tables} connected={connected} />}</div>;
   }
   const isVC = gameState.mode === 'virtualcards';
-  const title = isVC ? 'Virtual Cards' : gameState.mode === 'unlimited' ? 'Multi-handed Poker' : 'Heads-Up Poker';
+  const multiplayer = gameState.mode === 'unlimited';
+  const title = isVC ? 'Virtual Cards' : multiplayer ? 'Multi-handed Poker' : 'Heads-Up Poker';
 
 
   return (
@@ -206,7 +212,7 @@ function PokerSession({ classic }: { classic: boolean }) {
       {error && <div className="error">{error}</div>}
 
       {/* VC mode: show table when cards are dealt, lobby otherwise */}
-      {classic && myIndex < 0 ? null : myIndex < 0 && !gameState.gameStarted ? <p>Watching this table. Request a seat to join the game.</p> : isVC && gameState.vcState ? (
+      {classic && myIndex < 0 ? null : myIndex < 0 && !gameState.gameStarted && !multiplayer ? <p>Watching this table. Request a seat to join the game.</p> : isVC && gameState.vcState ? (
         <VirtualCards
           gameState={gameState}
           myIndex={myIndex}
@@ -226,7 +232,7 @@ function PokerSession({ classic }: { classic: boolean }) {
           uiMode={uiMode}
           onSetUiMode={handleSetUiMode}
         />
-      ) : !gameState.gameStarted ? (
+      ) : !gameState.gameStarted && !multiplayer ? (
         <>
           <Lobby
             gameState={gameState}
@@ -270,6 +276,7 @@ function PokerSession({ classic }: { classic: boolean }) {
           onRebuy={handleRebuy}
           onLeave={handleLeave}
           onTogglePause={handleTogglePause}
+          onStartGame={handleStartGame}
           avatarFiles={avatarFiles}
           uiMode={uiMode}
           onSetUiMode={handleSetUiMode}

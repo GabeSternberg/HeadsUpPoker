@@ -122,6 +122,32 @@ test('minimum raise is the current bet plus the last raise increment', async () 
   assert.equal(getLegalActions(state, 1).minRaise, 100, 'facing a bet of 50 the minimum raise is to 100');
 });
 
+test('postflop action starts left of the dealer, including two-handed multi tables', async () => {
+  const { createRoom, startHand, handleAction } = await import('../src/gameState');
+  const seatPlayers = (stacks: (number | null)[]) => stacks.map((stack, seatIndex) => stack === null ? null
+    : { stack, seatIndex, name: `P${seatIndex}`, id: `${seatIndex}`, connected: true, ready: true, holeCards: [] });
+  for (const mode of ['unlimited', 'headsup'] as const) {
+    const room = createRoom(); room.mode = mode;
+    room.players = seatPlayers(mode === 'headsup' ? [1000, 1000] : [null, 1000, null, 1000]);
+    room.dealerIndex = mode === 'headsup' ? 0 : 3;
+    startHand(room);
+    const dealer = room.hand!.dealerIndex, other = room.hand!.participants.find(s => s !== dealer)!;
+    assert.equal(room.hand!.sbIndex, dealer, `${mode}: the dealer posts the small blind two-handed`);
+    assert.equal(room.hand!.currentPlayerIndex, dealer, `${mode}: the dealer acts first preflop`);
+    handleAction(room, dealer, { type: 'call' });
+    handleAction(room, other, { type: 'check' });
+    assert.equal(room.hand!.round, 'flop');
+    assert.equal(room.hand!.currentPlayerIndex, other, `${mode}: the non-dealer acts first on the flop`);
+  }
+  const room = createRoom(); room.mode = 'unlimited';
+  room.players = seatPlayers([1000, 1000, 1000]);
+  room.dealerIndex = 0;
+  startHand(room);
+  for (const seat of [0, 1]) handleAction(room, seat, { type: 'call' });
+  handleAction(room, 2, { type: 'check' });
+  assert.equal(room.hand!.currentPlayerIndex, 1, 'three-handed, the small blind (left of dealer) acts first postflop');
+});
+
 test('private invitations, sit out/back in, host transfer and reconciled session ledger', async () => {
   const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
   await new Promise<void>(r => http.listen(0, '127.0.0.1', r));

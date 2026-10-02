@@ -7,7 +7,7 @@
  *
  * Standard multi-player betting order:
  *  - Preflop: action starts on player after BB (UTG), ends on BB.
- *  - Postflop: action starts on SB (or first active player left of dealer).
+ *  - Postflop: action starts on the first active player left of the dealer.
  *
  * After each hand, dealer button moves clockwise (next active seat).
  */
@@ -819,14 +819,9 @@ function advanceRound(room: Room): void {
     return hand.playerAllIn[i] || hand.playerFolded[i];
   });
 
-  // Postflop: find first active (non-folded, non-all-in) player
-  // In heads-up: start from BB (non-dealer). In multi: start from SB.
-  let startFrom: number;
-  if (room.mode === 'headsup') {
-    startFrom = hand.participants.find(s => s !== hand.dealerIndex)!;
-  } else {
-    startFrom = hand.sbIndex;
-  }
+  // Postflop action starts with the first player after the dealer, in every mode.
+  // With two players the dealer is the small blind, so this is the big blind.
+  const startFrom = nextSeat(hand.participants, hand.dealerIndex);
 
   // Find first active player starting from startFrom
   let firstActor = startFrom;

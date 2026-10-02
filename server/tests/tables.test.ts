@@ -284,6 +284,20 @@ test('host override kick works mid-hand: the player folds, then is cashed out', 
     assert.equal(state.ledger.at(-1).amount, 500 - state.settings.bigBlind / 2);
     state = await send(b, 'setSittingOut', { sittingOut: false });
     assert.equal(state.players[2].stack, 500 + state.settings.bigBlind / 2);
+
+    const viewer = await client();
+    await send(viewer, 'joinGame', { code, name: 'Viewer' });
+    state = await send(host, 'nextHand');
+    assert.equal(state.hand.handOver, false);
+    assert.match((await reject(viewer, 'terminateTable', { password: 'wrong' })).message, /terminate code/);
+    const hostKicked = event(host, 'kicked'), bKicked = event(b, 'kicked');
+    viewer.emit('terminateTable', { password: 'terminate123' });
+    const [ended] = await Promise.all([hostKicked, bKicked, event(viewer, 'kicked')]);
+    assert.match(ended.message, /terminated/);
+    const balance = ended.ledger.reduce((n: number, e: any) => n + (e.type === 'buy-in' ? e.amount : -e.amount), 0);
+    assert.equal(balance, 0, 'every seat is cashed out and the voided hand is refunded');
+    const late = await client();
+    assert.match((await reject(late, 'joinGame', { code, name: 'Late' })).message, /not found/);
   } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
 });
 

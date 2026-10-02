@@ -999,6 +999,35 @@ h1 {
   opacity: 0.4;
 }
 
+.mp-seat.open,
+.mp-seat.requested {
+  width: 118px;
+  opacity: 1;
+}
+
+.mp-plate.mp-sit {
+  font: inherit;
+  color: #2ecc71;
+  cursor: pointer;
+  border: 1px dashed #2ecc71;
+}
+
+.mp-plate.mp-sit:hover,
+.mp-plate.mp-sit:focus-visible {
+  background: rgba(46, 204, 113, 0.18);
+  outline: none;
+  box-shadow: 0 0 0 2px #2ecc71;
+}
+
+.mp-seat.requested .mp-plate {
+  border: 1px dashed #f1c40f;
+  color: #f1c40f;
+}
+
+.mp-seat.requested .mp-name {
+  white-space: normal;
+}
+
 .mp-seat.folded {
   opacity: 0.55;
 }

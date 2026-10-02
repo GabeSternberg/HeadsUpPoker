@@ -70,9 +70,11 @@ const TABLE_HEIGHT = 640;
 export default function MultiplayerTable({
   gameState,
   myIndex,
+  onSit,
 }: {
   gameState: GameState;
   myIndex: number;
+  onSit?: (seat: number) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -145,6 +147,30 @@ export default function MultiplayerTable({
             const action = actions.get(index);
             const showFaces = isMe || !!hand?.showdown;
             const inHand = !!hand && !!player && !player.sittingOut;
+            const myRequest = gameState.seatRequest?.seat === index ? gameState.seatRequest : null;
+            const otherRequest = gameState.seatRequests?.find(r => r.seat === index);
+            const canSit = !player && myIndex < 0 && !gameState.seatRequest && !otherRequest && !!onSit;
+            const emptyLabel = myRequest
+              ? myRequest.approved ? 'Approved · next hand' : 'Waiting for host'
+              : otherRequest ? `${otherRequest.name} wants to sit`
+              : canSit ? 'Sit here' : 'Empty';
+            const plate = (
+              <>
+                {player?.isDealer && <span className="mp-dealer" title="Dealer">D</span>}
+                <div className="mp-name">
+                  {player ? `${names[index]}${isMe ? ' (You)' : ''}` : emptyLabel}
+                </div>
+                {player && <div className="mp-stack">{player.stack}</div>}
+                <div className="mp-tags">
+                  {player?.isSB && <span className="mp-tag sb">SB</span>}
+                  {player?.isBB && <span className="mp-tag bb">BB</span>}
+                  {folded && <span className="mp-tag fold">FOLD</span>}
+                  {allIn && <span className="mp-tag allin">ALL IN</span>}
+                  {player?.sittingOut && <span className="mp-tag out">OUT</span>}
+                  {player && !player.connected && <span className="mp-tag off">AWAY</span>}
+                </div>
+              </>
+            );
 
             return (
               <div key={index}>
@@ -167,24 +193,16 @@ export default function MultiplayerTable({
                   />
                 )}
                 <div
-                  className={`mp-seat${player ? '' : ' empty'}${isMe ? ' me' : ''}${folded ? ' folded' : ''}${acting ? ' acting' : ''}${player && !player.connected ? ' offline' : ''}`}
+                  className={`mp-seat${player ? '' : ' empty'}${canSit ? ' open' : ''}${myRequest || otherRequest ? ' requested' : ''}${isMe ? ' me' : ''}${folded ? ' folded' : ''}${acting ? ' acting' : ''}${player && !player.connected ? ' offline' : ''}`}
                   style={{ left: `${spot.left}%`, top: `${spot.top}%` }}
                 >
-                  <div className="mp-plate">
-                    {player?.isDealer && <span className="mp-dealer" title="Dealer">D</span>}
-                    <div className="mp-name">
-                      {player ? `${names[index]}${isMe ? ' (You)' : ''}` : 'Empty'}
-                    </div>
-                    {player && <div className="mp-stack">{player.stack}</div>}
-                    <div className="mp-tags">
-                      {player?.isSB && <span className="mp-tag sb">SB</span>}
-                      {player?.isBB && <span className="mp-tag bb">BB</span>}
-                      {folded && <span className="mp-tag fold">FOLD</span>}
-                      {allIn && <span className="mp-tag allin">ALL IN</span>}
-                      {player?.sittingOut && <span className="mp-tag out">OUT</span>}
-                      {player && !player.connected && <span className="mp-tag off">AWAY</span>}
-                    </div>
-                  </div>
+                  {canSit ? (
+                    <button type="button" className="mp-plate mp-sit" aria-label={`Sit in seat ${index + 1}`} onClick={() => onSit!(index)}>
+                      {plate}
+                    </button>
+                  ) : (
+                    <div className="mp-plate">{plate}</div>
+                  )}
                 </div>
               </div>
             );

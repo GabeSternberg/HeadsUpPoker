@@ -17,6 +17,7 @@ interface GameProps {
   onLeave: () => void;
   onTogglePause: () => void;
   onStartGame: () => void;
+  onRequestSeat: (seat: number) => void;
   avatarFiles: { L: string[]; G: string[] };
   uiMode: 'mobile' | 'pc';
   onSetUiMode: (mode: 'mobile' | 'pc') => void;
@@ -159,7 +160,7 @@ function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameStat
   );
 }
 
-export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, onStartGame, avatarFiles, uiMode, onSetUiMode }: GameProps) {
+export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, onStartGame, onRequestSeat, avatarFiles, uiMode, onSetUiMode }: GameProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -243,7 +244,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
 
       {multiplayer ? (
         <>
-          <MultiplayerTable gameState={gameState} myIndex={myIndex} />
+          <MultiplayerTable gameState={gameState} myIndex={myIndex} onSit={onRequestSeat} />
 
           {!gameState.gameStarted && gameState.isHost && (
             <button

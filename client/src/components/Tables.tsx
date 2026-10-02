@@ -53,6 +53,10 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
     <div className="table-controls"><strong>{state.isPrivate ? 'Private game' : 'Game'} {state.tableCode}</strong><span>Host: {state.hostName}{state.isHost ? ' (you)' : ''}</span>
       <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(`${location.origin}${location.pathname}?table=${state.tableCode}${state.isPrivate ? `#key=${state.accessKey}` : ''}`); setCopied(true); } catch { setCopied(false); } }}>{copied ? 'Link copied' : 'Copy invite link'}</button>
       <button className="btn" disabled={active && state.myIndex >= 0} onClick={() => socket?.emit('leaveGame')}>Leave game</button>
+      <button className="btn" onClick={() => {
+        const password = window.prompt('Enter the terminate code to end this game for everyone:');
+        if (password) socket?.emit('terminateTable', { password });
+      }}>Terminate game</button>
     </div>
     {me && <div className="table-controls">
       <button className="btn" onClick={() => socket?.emit('setSittingOut', { sittingOut: !(me.sittingOut || me.sitOutNextHand) })}>{me.sitOutNextHand ? 'Cancel sit out' : me.sittingOut ? 'Sit back in' : active ? 'Sit out next hand' : 'Sit out'}</button>
@@ -60,7 +64,7 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
       {state.mode !== 'virtualcards' && <button className="btn" disabled={active} onClick={() => socket?.emit('cashOut')}>Cash out & stand up</button>}
     </div>}
     {state.paused && <p>Game paused. If a player disconnected, wait for them to return, then the host can resume.</p>}
-    {state.myIndex < 0 && <div>
+    {state.myIndex < 0 && state.mode !== 'unlimited' && <div>
       <h3>Choose a seat</h3>
       <p>{state.seatRequest ? state.seatRequest.approved ? `Seat ${state.seatRequest.seat + 1} approved — you'll be dealt in when this hand ends.` : `Waiting for host approval for seat ${state.seatRequest.seat + 1}.` : 'You are watching. Request a seat; the host sets your starting chips.'}</p>
       <div className="table-controls">{state.players.map((p, i) => <button key={i} className="btn" disabled={!!p || !!state.seatRequest} onClick={() => socket?.emit('requestSeat', { seat: i })}>{p ? `${i + 1}: ${p.name}` : `Sit in seat ${i + 1}`}</button>)}</div>

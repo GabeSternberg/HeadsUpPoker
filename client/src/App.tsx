@@ -139,6 +139,11 @@ function PokerSession({ classic }: { classic: boolean }) {
     socket.emit('startGame');
   }, [socket]);
 
+  const handleRequestSeat = useCallback((seat: number) => {
+    if (!socket) return;
+    socket.emit('requestSeat', { seat });
+  }, [socket]);
+
   const handleSetMode = useCallback((mode: 'headsup' | 'unlimited' | 'virtualcards') => {
     if (!socket) return;
     socket.emit('setMode', { mode });
@@ -277,6 +282,7 @@ function PokerSession({ classic }: { classic: boolean }) {
           onLeave={handleLeave}
           onTogglePause={handleTogglePause}
           onStartGame={handleStartGame}
+          onRequestSeat={handleRequestSeat}
           avatarFiles={avatarFiles}
           uiMode={uiMode}
           onSetUiMode={handleSetUiMode}

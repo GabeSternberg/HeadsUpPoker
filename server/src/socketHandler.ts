@@ -398,6 +398,30 @@ export function setupSocketHandlers(io: Server): void {
       io.sockets.sockets.get(target.socketId)?.disconnect(true);
       broadcast(t);
     });
+    on('terminateTable', (data, t) => {
+      if (t.classic) return error('Use Reset game with the recovery password on the heads-up table.');
+      if (data.password !== 'terminate123') return error('Incorrect terminate code.');
+      const hand = t.room.hand;
+      // An unfinished hand is voided so the ledger closes with everyone's pre-hand stack.
+      if (hand && !hand.handOver) for (const s of hand.participants) {
+        const p = t.room.players[s];
+        if (p) p.stack = hand.startingStacks[s];
+      }
+      t.room.hand = null;
+      t.requests = []; t.additions.clear();
+      const evicted = [...(t.evicted?.values() ?? [])];
+      t.evicted?.clear();
+      for (const m of evicted) cashOut(t, m, 'Game terminated');
+      for (const m of t.members.values()) cashOut(t, m, 'Game terminated');
+      const members = [...t.members.values()];
+      t.members.clear();
+      tables.delete(t.code);
+      for (const m of members) {
+        io.to(m.socketId).emit('kicked', { message: 'This game was terminated.', ledger: t.ledger, tableCode: t.code });
+        io.sockets.sockets.get(m.socketId)?.disconnect(true);
+      }
+      directory();
+    });
     socket.on('disconnect', () => {
       if (!table || !member || member.socketId !== socket.id || !table.members.has(member.token)) return;
       if (member.seat >= 0) {

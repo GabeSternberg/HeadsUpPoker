@@ -207,7 +207,8 @@ test('private invitations, sit out/back in, host transfer and reconciled session
     state = await send(guest, 'nextHand');
     assert.equal(state.players[2].isSB, false); assert.equal(state.players[2].isBB, false);
     assert.ok(state.players[0].stack < hostStack); reconcile(state);
-    state = await send(host, 'action', { type: 'fold' }); reconcile(state);
+    assert.equal(state.players[0].isBB, true, 'the big blind moves clockwise from the previous BB, skipping the sitting-out seat');
+    state = await send(guest, 'action', { type: 'fold' }); reconcile(state);
     state = await send(third, 'setSittingOut', { sittingOut: false });
     assert.equal(state.hostCandidates.length, 0);
     state = await send(host, 'cancelChipChange', { seat: 0 });
@@ -501,4 +502,70 @@ test('large tables rotate players with one deck and keep undealt chips intact', 
   assert.equal(room.vc!.communityCards.length, 5);
   const cards = [...Object.values(room.vc!.playerCards).flat(), ...room.vc!.communityCards];
   assert.equal(new Set(cards.map(c => `${c.rank}-${c.suit}`)).size, cards.length);
+});
+
+test('nine-player socket game handles reconnect, fractional all-ins, kicks, top-ups, and the next hand', async () => {
+  const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
+  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const port = (http.address() as any).port, sockets: any[] = [], players: any[] = [], sessions: any[] = [];
+  async function client() {
+    const s = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], reconnection: false });
+    sockets.push(s); await event(s, 'connect'); return s;
+  }
+  async function send(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'gameState'); s.emit(command, data); return result;
+  }
+  async function reject(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'actionError'); s.emit(command, data); return result;
+  }
+  const reconcile = (state: any) => {
+    const ledger = state.ledger.reduce((sum: number, row: any) => sum + (row.type === 'buy-in' ? row.amount : -row.amount), 0);
+    assert.equal(ledger, state.players.reduce((sum: number, p: any) => sum + (p?.stack ?? 0), 0) + (state.hand?.pot ?? 0));
+  };
+  try {
+    const host = await client(); players.push(host);
+    let state = await send(host, 'createTable', { mode: 'unlimited', name: 'P0' }); const code = state.tableCode;
+    await send(host, 'updateSettings', { bigBlind: 21 }); await send(host, 'setChips', { seat: 0, chips: 501 });
+    for (let seat = 1; seat < 9; seat++) {
+      const player = await client(); players.push(player); const session = event(player, 'tableSession');
+      await send(player, 'joinGame', { code, name: `P${seat}` }); sessions[seat] = await session;
+      await send(player, 'requestSeat', { seat }); state = await send(host, 'approveSeat', { id: String(seat), chips: 501 });
+    }
+    const view8 = event(players[8], 'gameState', s => s.gameStarted);
+    state = await send(host, 'startGame'); const savedCards = (await view8).players[8].holeCards;
+    assert.equal(state.players.filter((p: any) => p?.inHand).length, 9); assert.equal(state.hand.currentPlayerIndex, 3); reconcile(state);
+    state.players.forEach((p: any, i: number) => { if (i !== 0) assert.equal(p.holeCards, null); });
+    assert.match((await reject(players[4], 'action', { type: 'call' })).message, /turn/);
+    const pause = event(host, 'gameState', s => s.paused); players[8].disconnect(); await pause;
+    assert.match((await reject(players[3], 'action', { type: 'raise', amount: 50.5 })).message, /paused/);
+    players[8] = await client(); state = await send(players[8], 'resumeTable', sessions[8]);
+    assert.deepEqual(state.players[8].holeCards, savedCards); await send(host, 'togglePause');
+    state = await send(host, 'addChips', { seat: 8, chips: 100 }); assert.equal(state.pendingChipChanges[8].amount, 100);
+    await send(host, 'addChips', { seat: 6, chips: 50 });
+    const removed = event(players[6], 'kicked'); state = await send(host, 'kickPlayer', { targetIndex: 6, password: '123' }); await removed;
+    assert.equal(state.pendingChipChanges[6], undefined, 'kicking a player cancels unapplied top-ups');
+    await reject(host, 'addChips', { seat: 6, chips: 50 });
+    state = await send(players[3], 'action', { type: 'raise', amount: 50.5 });
+    while (state.hand.round === 'preflop') {
+      const seat = state.hand.currentPlayerIndex; assert.notEqual(seat, 6);
+      state = await send(players[seat], 'action', { type: seat === 7 ? 'fold' : state.legalActions?.canCheck ? 'check' : 'call' }); reconcile(state);
+      if (seat === 7) {
+        await delay(); const update = event(host, 'gameState'); players[7].disconnect(); state = await update;
+        assert.equal(state.paused, false, 'a folded player disconnecting must not block the hand');
+      }
+    }
+    assert.equal(state.hand.round, 'flop'); assert.equal(state.hand.currentPlayerIndex, 1);
+    state = await send(players[1], 'action', { type: 'raise', amount: 450.5 });
+    for (let step = 0; !state.hand.handOver; step++) {
+      assert.ok(step < 20); const seat = state.hand.currentPlayerIndex;
+      state = await send(players[seat], 'action', { type: 'call' }); reconcile(state);
+    }
+    assert.equal(state.hand.communityCards.length, 5); assert.equal(state.players[6], null);
+    assert.equal(state.pendingChipChanges[8], undefined); assert.equal(state.players[8].stack >= 100, true);
+    assert.ok(state.ledger.some((e: any) => e.reason === 'Host removed player' && e.amount === 501)); reconcile(state);
+    await send(host, 'addChips', { seat: 0, chips: 501 }); await send(host, 'addChips', { seat: 8, chips: 501 });
+    const replacement = await client(); await send(replacement, 'joinGame', { code, name: 'Replacement' });
+    await send(replacement, 'requestSeat', { seat: 6 }); await send(host, 'approveSeat', { id: '6', chips: 501 });
+    state = await send(host, 'nextHand'); assert.equal(state.hand.handOver, false); assert.equal(state.players[6].inHand, true); reconcile(state);
+  } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
 });

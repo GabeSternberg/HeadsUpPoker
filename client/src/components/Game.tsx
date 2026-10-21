@@ -6,6 +6,7 @@ import ActionPanel from './ActionPanel';
 import ActionLog from './ActionLog';
 import StatsPanel from './StatsPanel';
 import MultiplayerTable from './MultiplayerTable';
+import PotBreakdown, { displayedPot } from './PotBreakdown';
 
 interface GameProps {
   gameState: GameState;
@@ -329,7 +330,8 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         <div className="board-area">
           {hand && (
             <>
-              <div className="pot">Pot: {hand.pot}</div>
+              <div className="pot">{hand.handOver ? 'Awarded' : 'Pot'}: {displayedPot(hand).toLocaleString()}</div>
+              <PotBreakdown hand={hand} />
               <div className="round-label">{hand.round.toUpperCase()}</div>
               <div className="community-cards">
                 {hand.communityCards.map((card, i) => (

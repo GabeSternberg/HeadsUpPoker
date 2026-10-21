@@ -20,6 +20,7 @@ export interface BettingState {
   playerBets: number[];      // each player's total bet THIS ROUND
   playerStacks: number[];
   playerActedThisRound: boolean[];
+  playerLastActionBet?: (number | null)[];
   playerAllIn: boolean[];
   playerFolded: boolean[];
   bigBlind: number;
@@ -48,19 +49,23 @@ export function getLegalActions(state: BettingState, playerIndex: number): {
   minRaise: number;
   maxRaise: number;
 } {
-  const toCall = state.currentBet - state.playerBets[playerIndex];
-  const stack = state.playerStacks[playerIndex];
+  const toCall = Math.max(0, state.currentBet - (state.playerBets[playerIndex] ?? 0));
+  const stack = state.playerStacks[playerIndex] ?? 0;
+  const active = Number.isInteger(playerIndex) && playerIndex >= 0 && playerIndex < state.numPlayers && !state.playerFolded[playerIndex] && !state.playerAllIn[playerIndex] && stack > 0;
 
-  const canFold = true;
-  const canCheck = toCall === 0;
-  const canCall = toCall > 0 && stack > 0;
+  const canFold = active;
+  const canCheck = active && toCall === 0;
+  const canCall = active && toCall > 0;
   const callAmount = Math.min(toCall, stack);
 
   // Min raise: the current bet plus the last raise increment (never less than the big blind)
   const minRaiseTotal = state.currentBet + Math.max(state.lastRaiseSize, state.bigBlind);
   const maxRaiseTotal = state.playerBets[playerIndex] + stack;
 
-  const canRaise = stack > toCall && maxRaiseTotal > state.currentBet;
+  const lastActionBet = state.playerLastActionBet?.[playerIndex] ?? (state.playerActedThisRound[playerIndex] ? state.playerBets[playerIndex] : null);
+  const reopened = lastActionBet === null || state.currentBet - lastActionBet >= Math.max(state.lastRaiseSize, state.bigBlind);
+  const opponentCanCall = state.playerStacks.some((chips, i) => i !== playerIndex && chips > 0 && !state.playerFolded[i] && !state.playerAllIn[i]);
+  const canRaise = active && reopened && opponentCanCall && stack > toCall && maxRaiseTotal > state.currentBet;
 
   return {
     canFold,
@@ -82,6 +87,7 @@ export function processAction(
   action: PlayerAction
 ): ActionResult {
   const legal = getLegalActions(state, playerIndex);
+  if (!legal.canFold) return { valid: false, error: 'Player is not active in this betting round' };
   const newState: BettingState = {
     ...state,
     playerBets: [...state.playerBets],
@@ -89,12 +95,14 @@ export function processAction(
     playerActedThisRound: [...state.playerActedThisRound],
     playerAllIn: [...state.playerAllIn],
     playerFolded: [...state.playerFolded],
+    playerLastActionBet: state.playerLastActionBet ? [...state.playerLastActionBet] : state.playerBets.map((bet, i) => state.playerActedThisRound[i] ? bet : null),
   };
 
   switch (action.type) {
     case 'fold': {
       newState.playerFolded[playerIndex] = true;
       newState.playerActedThisRound[playerIndex] = true;
+      newState.playerLastActionBet![playerIndex] = newState.currentBet;
 
       // Check if only one player remains
       const remaining = newState.playerFolded.filter(f => !f).length;
@@ -123,6 +131,7 @@ export function processAction(
         return { valid: false, error: 'Cannot check — must call or fold' };
       }
       newState.playerActedThisRound[playerIndex] = true;
+      newState.playerLastActionBet![playerIndex] = newState.currentBet;
       break;
     }
 
@@ -135,6 +144,7 @@ export function processAction(
       newState.playerBets[playerIndex] += callAmt;
       newState.pot += callAmt;
       newState.playerActedThisRound[playerIndex] = true;
+      newState.playerLastActionBet![playerIndex] = newState.currentBet;
       if (newState.playerStacks[playerIndex] === 0) {
         newState.playerAllIn[playerIndex] = true;
       }
@@ -146,8 +156,8 @@ export function processAction(
         return { valid: false, error: 'Cannot raise' };
       }
       const raiseTotal = action.amount;
-      if (raiseTotal === undefined) {
-        return { valid: false, error: 'Raise amount required' };
+      if (typeof raiseTotal !== 'number' || !Number.isFinite(raiseTotal) || raiseTotal <= 0 || !Number.isSafeInteger(raiseTotal * 2)) {
+        return { valid: false, error: 'Raise amount must be a positive whole or half chip amount' };
       }
       if (raiseTotal > legal.maxRaise) {
         return { valid: false, error: `Cannot raise to ${raiseTotal}, max is ${legal.maxRaise}` };
@@ -162,10 +172,11 @@ export function processAction(
       newState.playerBets[playerIndex] = raiseTotal;
       newState.pot += chipsNeeded;
       newState.currentBet = raiseTotal;
-      if (raiseIncrement >= newState.lastRaiseSize) {
+      if (raiseIncrement >= Math.max(newState.lastRaiseSize, newState.bigBlind)) {
         newState.lastRaiseSize = raiseIncrement;
       }
       newState.playerActedThisRound[playerIndex] = true;
+      newState.playerLastActionBet![playerIndex] = newState.currentBet;
       // All other non-folded, non-all-in players must act again
       for (let i = 0; i < newState.numPlayers; i++) {
         if (i !== playerIndex && !newState.playerFolded[i] && !newState.playerAllIn[i]) {
@@ -222,5 +233,6 @@ export function newStreetBetting(state: BettingState): BettingState {
     lastRaiseSize: 0,
     playerBets: new Array(state.numPlayers).fill(0),
     playerActedThisRound: acted,
+    playerLastActionBet: new Array(state.numPlayers).fill(null),
   };
 }

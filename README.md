@@ -35,7 +35,7 @@ For Multiplayer, create a game, share its invite link or six-character code, and
 - Unlimited tables grow by adding an empty seat as occupied/requested seats fill. There is no fixed seat or member limit for these tables. One 52-card deck deals at most 23 players per hand under the engine's current no-burn dealing rules; larger groups rotate clockwise with the dealer. Undealt players keep their stack and do not post blinds.
 - Hosts can rename anyone, including themselves, viewers, and people awaiting approval, under Host controls → Player names. Names allow 1–30 characters and no control characters. Renames update names on seats, requests, host lists, and ledger labels; player IDs, cards, chips, and reconnect credentials stay the same. Custom names also override avatar labels.
 - Heads-up joiners automatically take an available seat before a hand. Multi-handed joiners watch first and request a specific seat.
-- The host approves/declines seat requests and sets each approved player's buy-in. Players ready up to start with at least two funded players.
+- The host approves/declines seat requests and sets each approved player's buy-in. On multi-handed tables, the host starts the game once at least two connected, funded players are sitting in.
 - The host can add chips, remove chips, or set an exact stack (including zero) for any seated player. During a hand, chip changes and seat approvals queue until the hand finishes. Set stack targets the final balance; Remove subtracts from the final balance. Queued changes can be cancelled. A change that would leave the final stack below zero or above 1,000,000 is cancelled and logged. They never alter active-hand stacks or side-pot accounting.
 - The default buy-in setting supplies the approval form's default amount; it does not overwrite approved multi-handed stacks. Use Add chips for existing stacks.
 - Only the host can change shared settings, pause/resume, reset to the lobby, remove players, or control virtual-card dealing. Anyone seated can request the next hand once the previous hand ends.
@@ -43,8 +43,9 @@ For Multiplayer, create a game, share its invite link or six-character code, and
 - Use Sit out to hold your seat and chips without being dealt in or posting blinds. During your active hand this queues until the hand ends; you must still finish that hand. Sit back in makes you eligible for the next hand.
 - Hosts can explicitly transfer control to any connected member without leaving.
 - Cash out & stand up records your remaining stack and frees your seat between hands; you remain a viewer and can request another buy-in. Leaving or host removal also records a cash-out.
-- Disconnects preserve seats and pause an active hand. Reconnect in the same tab, then have the host resume. A different player cannot claim the disconnected seat.
+- Disconnects preserve seats. If a player still able to act disconnects, the hand pauses until they reconnect and the host resumes. Folded and all-in players disconnecting do not block play. A different player cannot claim the disconnected seat.
 - Resets preserve table membership and stacks; they return players to the lobby. Add chips as needed before readying again.
+- The table shows the main pot and every numbered side pot, including each amount and eligible-player count. Unmatched wagers are separate. At showdown, each pot shows its winners and payouts, and the breakdown stays visible until the next deal. Folded contributions remain in their correct pot rather than creating extra side pots.
 - Private cards stay hidden from other players and spectators, except non-folded hands at showdown.
 
 ## Validation
@@ -56,6 +57,10 @@ npm test --prefix server
 ```
 
 Tests require both packages' dependencies installed. Socket tests open a local loopback listener. Coverage includes table isolation, host permissions, seat approvals, deferred top-ups, reconnect credentials, malformed requests, card privacy, two-player blind order in multi-handed games, and chip conservation with unequal multiway all-ins.
+
+The nine-handed suite checks every dealer position and street, the big blind's option, short blinds, individual and cumulative short all-ins, reopening thresholds, uncalled refunds, automatic all-in runouts, exact main/side-pot payouts, odd-chip splits clockwise from the dealer, fractional wagers, bust-out blind progression, and hand-ranking tie breakers. It also runs 3,000 seeded nine-player games against a separate payout calculation and exercises a full nine-client game through reconnects, a mid-hand kick, deferred chip changes, and the next hand.
+
+Gameplay uses the full configured big blind as the preflop bring-in even when a blind is short. Unmatched wagers are returned when the betting closes. A player cannot raise when no other funded live player can call. Short all-ins reopen raising only when that particular player faces a full raise since their last action. Split pots allocate odd chips one at a time clockwise from the dealer, using half-chip units when those are in play. Removing a player cancels unapplied chip changes for that seat.
 
 ## Deployment configuration
 

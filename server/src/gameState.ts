@@ -13,7 +13,7 @@
  */
 
 import { Deck, Card, cardToString } from './deck';
-import { BettingState, getLegalActions, processAction, newStreetBetting, PlayerAction } from './betting';
+import { BettingState, getLegalActions, processAction, PlayerAction } from './betting';
 import { evaluateHand, compareHands, HandResult } from './handEvaluator';
 import { appendHandRow, StatsLogData } from './statsLogger';
 import { PendingDecision, flushDecisions } from './classifierLogger';
@@ -37,15 +37,24 @@ export interface PlayerState {
   sitOutNextHand?: boolean;
 }
 
+export interface PotInfo {
+  amount: number;
+  eligiblePlayers: { seat: number; name: string }[];
+  awards: { seat: number; name: string; amount: number }[];
+}
+
 export interface HandState {
   deck: Deck;
   communityCards: Card[];
   round: Round;
   pot: number;
+  potResults: PotInfo[];
   currentBet: number;
   lastRaiseSize: number;
+  chipUnit: number;
   playerBets: number[];
   playerActedThisRound: boolean[];
+  playerLastActionBet: (number | null)[];
   playerAllIn: boolean[];
   playerFolded: boolean[];
   currentPlayerIndex: number;
@@ -379,6 +388,17 @@ function getOpponentStats(room: Room, seat: number) {
   return { vpip, pfr, af, foldToCbet, sampleSize: st.handsPlayed };
 }
 
+/** Advance blinds among funded seats, including the transition into heads-up. */
+export function advanceDealer(room: Room): void {
+  const seats = activeSeats(room);
+  if (seats.length < 2) return;
+  if (!room.hand) { room.dealerIndex = seats[0]; return; }
+  const nextBB = nextSeat(seats, room.hand.bbIndex);
+  const bbPosition = seats.indexOf(nextBB);
+  const offset = seats.length === 2 ? 1 : 2;
+  room.dealerIndex = seats[(bbPosition - offset + seats.length) % seats.length];
+}
+
 // --- Start a new hand ---
 
 export function startHand(room: Room): void {
@@ -492,10 +512,13 @@ export function startHand(room: Room): void {
     communityCards: [],
     round: 'preflop',
     pot: sbAmount + bbAmount,
-    currentBet: bbAmount,
-    lastRaiseSize: bbAmount,
+    potResults: [],
+    currentBet: bb,
+    lastRaiseSize: bb,
+    chipUnit: bb % 2 !== 0 || startingStacks.some(s => !Number.isInteger(s)) ? 0.5 : 1,
     playerBets,
     playerActedThisRound: playerActed,
+    playerLastActionBet: new Array(numPlayers).fill(null),
     playerAllIn,
     playerFolded,
     currentPlayerIndex: firstToAct,
@@ -515,14 +538,7 @@ export function startHand(room: Room): void {
   room.actionLog.push(`${room.players[sbIdx]!.name} posts small blind (${sbAmount})`);
   room.actionLog.push(`${room.players[bbIdx]!.name} posts big blind (${bbAmount})`);
 
-  // If all active players are all-in from blinds, run out
-  if (countActive(room.hand) === 0 && countNonFolded(room.hand) >= 2) {
-    runOutBoard(room);
-  }
-  // If first to act is all-in, advance to next
-  else if (room.hand.playerAllIn[firstToAct]) {
-    advanceToNextPlayer(room);
-  }
+  if (!finishIfNoBettingPossible(room) && room.hand.playerAllIn[firstToAct]) advanceToNextPlayer(room);
 }
 
 // --- Betting state bridge ---
@@ -536,6 +552,7 @@ function getBettingState(room: Room): BettingState {
     playerBets: room.players.map((_, i) => h.playerBets[i] ?? 0),
     playerStacks: room.players.map(p => p ? p.stack : 0),
     playerActedThisRound: room.players.map((_, i) => h.playerActedThisRound[i] ?? true),
+    playerLastActionBet: room.players.map((_, i) => h.playerLastActionBet[i] ?? null),
     playerAllIn: room.players.map((_, i) => h.playerAllIn[i] ?? false),
     playerFolded: room.players.map((_, i) => h.playerFolded[i] ?? true),
     bigBlind: room.settings.bigBlind,
@@ -548,12 +565,15 @@ function getBettingState(room: Room): BettingState {
 
 export function handleAction(room: Room, playerIndex: number, action: PlayerAction): { valid: boolean; error?: string } {
   const hand = room.hand;
+  if (room.paused) return { valid: false, error: 'Game is paused' };
   if (!hand || hand.handOver) return { valid: false, error: 'No active hand' };
   if (hand.currentPlayerIndex !== playerIndex) return { valid: false, error: 'Not your turn' };
   if (hand.playerAllIn[playerIndex]) return { valid: false, error: 'You are all-in' };
   if (hand.playerFolded[playerIndex]) return { valid: false, error: 'You have folded' };
 
   const bettingState = getBettingState(room);
+  const result = processAction(bettingState, playerIndex, action);
+  if (!result.valid) return { valid: false, error: result.error };
 
   // Capture classifier decision features BEFORE action is processed
   const captureCtx = room.handStatsCtx;
@@ -611,18 +631,16 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
     }
   }
 
-  const result = processAction(bettingState, playerIndex, action);
-
-  if (!result.valid) return { valid: false, error: result.error };
-
   const ns = result.newState!;
 
   // Apply new state back
   hand.pot = ns.pot;
+  if (ns.playerBets.some(bet => !Number.isInteger(bet))) hand.chipUnit = 0.5;
   hand.currentBet = ns.currentBet;
   hand.lastRaiseSize = ns.lastRaiseSize;
   hand.playerBets = ns.playerBets;
   hand.playerActedThisRound = ns.playerActedThisRound;
+  hand.playerLastActionBet = ns.playerLastActionBet!;
   hand.playerAllIn = ns.playerAllIn;
   hand.playerFolded = ns.playerFolded;
   for (let i = 0; i < room.players.length; i++) {
@@ -717,10 +735,13 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
   }
 
   if (result.handOver) {
+    refundUncalledBet(room);
     // Everyone else folded — last player standing wins
     const winnerIdx = hand.participants.find(s => !hand.playerFolded[s])!;
     hand.handOver = true;
     hand.winner = winnerIdx;
+    hand.potResults = [potInfo(room, { amount: hand.pot, eligible: [winnerIdx] })];
+    hand.potResults[0].awards = [{ seat: winnerIdx, name: getDisplayName(room, winnerIdx), amount: hand.pot }];
     hand.resultMessage = `${room.players[winnerIdx]!.name} wins the pot (${hand.pot})`;
     room.players[winnerIdx]!.stack += hand.pot;
     hand.pot = 0;
@@ -736,6 +757,8 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
     return { valid: true };
   }
 
+  if (finishIfNoBettingPossible(room)) return { valid: true };
+
   if (result.roundOver) {
     advanceRound(room);
   } else {
@@ -743,6 +766,33 @@ export function handleAction(room: Room, playerIndex: number, action: PlayerActi
   }
 
   return { valid: true };
+}
+
+/** Return the unmatched part of the highest wager before closing a street. */
+function refundUncalledBet(room: Room): void {
+  const hand = room.hand!;
+  const bets = hand.participants.map(seat => ({ seat, amount: hand.playerBets[seat] ?? 0 })).sort((a, b) => b.amount - a.amount);
+  const refund = bets[0].amount - (bets[1]?.amount ?? 0);
+  if (refund <= 0) return;
+  const seat = bets[0].seat;
+  room.players[seat]!.stack += refund;
+  hand.playerBets[seat] -= refund;
+  hand.pot -= refund;
+  hand.playerAllIn[seat] = room.players[seat]!.stack === 0;
+  hand.currentBet = Math.max(...hand.playerBets);
+  room.actionLog.push(`${room.players[seat]!.name} receives ${refund} uncalled chips back`);
+}
+
+/** Once all opponents are all-in, only an outstanding call/fold can remain. */
+function finishIfNoBettingPossible(room: Room): boolean {
+  const hand = room.hand!;
+  const active = hand.participants.filter(s => !hand.playerFolded[s] && !hand.playerAllIn[s]);
+  if (active.length > 1 || countNonFolded(hand) < 2) return false;
+  if (active.length === 1) {
+    hand.currentBet = Math.max(...hand.playerBets);
+    if (hand.playerBets[active[0]] < hand.currentBet) { hand.currentPlayerIndex = active[0]; return false; }
+  }
+  runOutBoard(room); return true;
 }
 
 /** Find the next player who can act and set them as current. */
@@ -765,6 +815,7 @@ function advanceToNextPlayer(room: Room): void {
 // --- Round advancement ---
 
 function advanceRound(room: Room): void {
+  refundUncalledBet(room);
   const hand = room.hand!;
   const nonFolded = countNonFolded(hand);
 
@@ -773,6 +824,8 @@ function advanceRound(room: Room): void {
     const winner = hand.participants.find(s => !hand.playerFolded[s])!;
     hand.handOver = true;
     hand.winner = winner;
+    hand.potResults = [potInfo(room, { amount: hand.pot, eligible: [winner] })];
+    hand.potResults[0].awards = [{ seat: winner, name: getDisplayName(room, winner), amount: hand.pot }];
     hand.resultMessage = `${room.players[winner]!.name} wins the pot (${hand.pot})`;
     room.players[winner]!.stack += hand.pot;
     hand.pot = 0;
@@ -829,6 +882,7 @@ function advanceRound(room: Room): void {
   hand.currentBet = 0;
   hand.lastRaiseSize = 0;
   hand.playerBets = new Array(room.players.length).fill(0);
+  hand.playerLastActionBet = new Array(room.players.length).fill(null);
   hand.playerActedThisRound = room.players.map((_, i) => {
     return hand.playerAllIn[i] || hand.playerFolded[i];
   });
@@ -862,6 +916,7 @@ function advanceRound(room: Room): void {
 
 /** Deal remaining community cards and go to showdown (when no more betting possible). */
 function runOutBoard(room: Room): void {
+  refundUncalledBet(room);
   const hand = room.hand!;
 
   while (hand.communityCards.length < 5) {
@@ -888,49 +943,29 @@ interface SidePot {
   eligible: number[]; // seat indices eligible to win this pot
 }
 
-function calculateSidePots(room: Room): SidePot[] {
+/** All-in caps create real pots; an unmatched top wager is pending/refundable. */
+function calculateSidePots(room: Room): { pots: SidePot[]; uncalled: number } {
   const hand = room.hand!;
-
-  // Total invested by each participant = startingStack - currentStack
-  // This includes folded players (their chips are in the pot too)
-  const invested: { seat: number; amount: number }[] = hand.participants.map(s => ({
-    seat: s,
-    amount: hand.startingStacks[s] - room.players[s]!.stack,
-  }));
-
-  // Get unique investment levels sorted ascending (these are the "layers")
-  const levels = [...new Set(invested.map(i => i.amount))].sort((a, b) => a - b);
-
+  const invested = hand.participants.map(seat => ({ seat, amount: hand.startingStacks[seat] - room.players[seat]!.stack }));
+  const ordered = [...invested].sort((a, b) => b.amount - a.amount);
+  const uncalled = Math.max(0, ordered[0].amount - (ordered[1]?.amount ?? 0));
+  const matched = invested.map(player => ({ ...player, amount: player.amount - (player.seat === ordered[0].seat ? uncalled : 0) }));
+  const maximum = Math.max(...matched.map(player => player.amount));
+  const caps = [...new Set([...matched.filter(player => hand.playerAllIn[player.seat] && !hand.playerFolded[player.seat]).map(player => player.amount), maximum])].filter(amount => amount > 0).sort((a, b) => a - b);
   const pots: SidePot[] = [];
-  let processedLevel = 0;
-
-  for (const level of levels) {
-    const layerSize = level - processedLevel;
-    if (layerSize <= 0) continue;
-
-    // Every player who invested >= this level contributes to this pot layer
-    const contributors = invested.filter(i => i.amount >= level);
-    const potAmount = layerSize * contributors.length;
-
-    // Only non-folded players who invested >= this level are eligible to win
-    const eligible = contributors
-      .filter(i => !hand.playerFolded[i.seat])
-      .map(i => i.seat);
-
-    if (potAmount > 0 && eligible.length > 0) {
-      pots.push({ amount: potAmount, eligible });
-    } else if (potAmount > 0 && eligible.length === 0) {
-      // All contributors at this level folded — add to next pot or give to remaining
-      // This shouldn't normally happen, but handle it: add to the last pot
-      if (pots.length > 0) {
-        pots[pots.length - 1].amount += potAmount;
-      }
-    }
-
-    processedLevel = level;
+  let previous = 0;
+  for (const cap of caps) {
+    const amount = matched.reduce((sum, player) => sum + Math.max(0, Math.min(player.amount, cap) - previous), 0);
+    const eligible = matched.filter(player => !hand.playerFolded[player.seat] && player.amount >= cap).map(player => player.seat);
+    if (amount > 0 && eligible.length) pots.push({ amount, eligible });
+    else if (amount > 0 && pots.length) pots[pots.length - 1].amount += amount;
+    previous = cap;
   }
+  return { pots, uncalled };
+}
 
-  return pots;
+function potInfo(room: Room, pot: SidePot): PotInfo {
+  return { amount: pot.amount, eligiblePlayers: pot.eligible.map(seat => ({ seat, name: getDisplayName(room, seat) })), awards: [] };
 }
 
 /** Commit per-hand stat context into cumulative counters and log to CSV. */
@@ -1042,6 +1077,7 @@ function commitHandStats(
 /** Evaluate hands and award pot. */
 function doShowdown(room: Room): void {
   const hand = room.hand!;
+  hand.round = 'showdown';
   hand.showdown = true;
   hand.handOver = true;
 
@@ -1056,9 +1092,13 @@ function doShowdown(room: Room): void {
   // Sort by hand strength (best first)
   results.sort((a, b) => compareHands(b.result, a.result));
 
-  const pots = calculateSidePots(room);
+  const { pots } = calculateSidePots(room);
+  hand.potResults = pots.map(pot => potInfo(room, pot));
 
-  for (const pot of pots) {
+  const payouts = new Map<number, number>();
+  const chipUnit = hand.chipUnit;
+  const clockwise = (seat: number) => (seat - hand.dealerIndex + room.players.length) % room.players.length || room.players.length;
+  for (const [potIndex, pot] of pots.entries()) {
     // Find best hand among eligible players
     const eligible = results.filter(r => pot.eligible.includes(r.seat));
     if (eligible.length === 0) continue;
@@ -1067,13 +1107,16 @@ function doShowdown(room: Room): void {
     // Find all players tied for best
     const winners = eligible.filter(r => compareHands(r.result, bestHand) === 0);
 
-    const share = Math.floor(pot.amount / winners.length);
-    const remainder = pot.amount - share * winners.length;
-
-    for (let i = 0; i < winners.length; i++) {
-      const amt = share + (i === 0 ? remainder : 0); // odd chip to first winner
-      room.players[winners[i].seat]!.stack += amt;
-    }
+    winners.sort((a, b) => clockwise(a.seat) - clockwise(b.seat));
+    const units = Math.round(pot.amount / chipUnit);
+    const share = Math.floor(units / winners.length);
+    const remainder = units % winners.length;
+    winners.forEach((winner, i) => {
+      const amount = (share + (i < remainder ? 1 : 0)) * chipUnit;
+      room.players[winner.seat]!.stack += amount;
+      payouts.set(winner.seat, (payouts.get(winner.seat) ?? 0) + amount);
+      hand.potResults[potIndex].awards.push({ seat: winner.seat, name: getDisplayName(room, winner.seat), amount });
+    });
   }
 
   hand.pot = 0;
@@ -1083,28 +1126,15 @@ function doShowdown(room: Room): void {
   hand.winnerHand = bestResult.result;
   hand.loserHand = results.length > 1 ? results[results.length - 1].result : null;
 
-  if (results.length >= 2 && compareHands(results[0].result, results[1].result) === 0) {
-    // Tie
-    const tiedPlayers = results.filter(r => compareHands(r.result, results[0].result) === 0);
-    hand.winner = null;
-    const names = tiedPlayers.map(r => room.players[r.seat]!.name).join(' & ');
-    hand.resultMessage = `Split pot — ${names} tie with ${bestResult.result.description}`;
+  const winners = [...payouts.keys()];
+  hand.winner = winners.length === 1 ? winners[0] : null;
+  if (pots.length === 1 && winners.length === 1) {
+    hand.resultMessage = `${room.players[winners[0]]!.name} wins ${payouts.get(winners[0])} with ${bestResult.result.description}`;
   } else {
-    hand.winner = bestResult.seat;
-    const totalWon = room.players[bestResult.seat]!.stack; // approximate
-    hand.resultMessage = `${room.players[bestResult.seat]!.name} wins with ${bestResult.result.description}`;
+    hand.resultMessage = `${winners.length > 1 ? 'Pot results' : 'Winner'}: ${[...payouts].map(([seat, amount]) => `${room.players[seat]!.name} wins ${amount}`).join('; ')}`;
   }
-
   room.actionLog.push(hand.resultMessage);
-
-  // Determine showdown winners for W$SD tracking
-  const showdownWinners: number[] = [];
-  if (hand.winner !== null) {
-    showdownWinners.push(hand.winner);
-  } else {
-    // Split: all non-folded participants are winners
-    showdownWinners.push(...hand.participants.filter(s => !hand.playerFolded[s]));
-  }
+  const showdownWinners = winners;
 
   // Build per-seat hand description for classifier
   const handDescriptions: Record<number, string> = {};
@@ -1134,6 +1164,7 @@ export function getCurrentLegalActions(room: Room) {
 /** Build the game state visible to a specific player (hides opponent's cards). */
 export function getClientState(room: Room, playerIndex: number) {
   const isShowdown = room.hand?.showdown ?? false;
+  const breakdown = room.hand && !room.hand.handOver ? calculateSidePots(room) : null;
 
   return {
     players: room.players.map((p, i) => {
@@ -1162,6 +1193,8 @@ export function getClientState(room: Room, playerIndex: number) {
       communityCards: room.hand.communityCards,
       round: room.hand.round,
       pot: room.hand.pot,
+      pots: breakdown ? breakdown.pots.map(pot => potInfo(room, pot)) : room.hand.potResults,
+      uncalled: breakdown?.uncalled ?? 0,
       currentBet: room.hand.currentBet,
       currentPlayerIndex: room.hand.currentPlayerIndex,
       playerBets: room.hand.playerBets,

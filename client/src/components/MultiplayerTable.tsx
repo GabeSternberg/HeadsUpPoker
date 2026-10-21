@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Card, GameState } from '../types';
 import { getDisplayName } from '../displayNames';
 import { CardDisplay } from './Card';
+import PotBreakdown, { displayedPot } from './PotBreakdown';
 
 type StreetAction = 'check' | 'fold' | 'call' | 'raise' | 'blind';
 
@@ -119,7 +120,8 @@ export default function MultiplayerTable({
           <div className="mp-felt" />
 
           <div className="mp-center">
-            {hand && <div className="mp-pot"><span className="mp-pot-label">POT</span>{hand.pot.toLocaleString()}</div>}
+            {hand && <div className="mp-pot"><span className="mp-pot-label">{hand.handOver ? 'AWARDED' : 'TOTAL POT'}</span>{displayedPot(hand).toLocaleString()}</div>}
+            {hand && <PotBreakdown hand={hand} />}
             {hand && <div className="mp-street">{hand.round}</div>}
             {hand && hand.communityCards.length > 0 && (
               <div className="mp-community">
@@ -192,13 +194,13 @@ export default function MultiplayerTable({
 
             return (
               <div key={index}>
-                {player && inHand && !folded && bet > 0 && (
+                {player && inHand && !hand?.handOver && !folded && bet > 0 && (
                   <div className="mp-chip" style={{ left: `${betSpot.left}%`, top: `${betSpot.top}%` }}>
                     <span className="mp-chip-icon" aria-hidden="true" />
                     {bet.toLocaleString()}
                   </div>
                 )}
-                {player && inHand && !folded && bet === 0 && action === 'check' && (
+                {player && inHand && !hand?.handOver && !folded && bet === 0 && action === 'check' && (
                   <div className="mp-chip check" style={{ left: `${betSpot.left}%`, top: `${betSpot.top}%` }}>
                     check
                   </div>

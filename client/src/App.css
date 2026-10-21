@@ -2296,3 +2296,13 @@ body:has(.mobile-ui) h1 {
 .heads-up-controls .btn { padding: 10px 16px; }
 .mp-table.large-table .mp-center { top: 135px; }
 .mp-table.large-table .mp-rail, .mp-table.large-table .mp-felt { border-radius: 48px; }
+.pot-breakdown { width: 100%; max-width: 340px; color: #f4f6fa; font-size: 12px; pointer-events: auto; }
+.pot-breakdown-heading { margin-bottom: 5px; color: #d5b975; font-size: 11px; font-weight: 700; }
+.pot-breakdown-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; max-height: 192px; overflow-y: auto; list-style: none; margin: 0; padding: 3px; scrollbar-width: thin; }
+.pot-breakdown-list:focus-visible { outline: 2px solid #d5b975; border-radius: 6px; }
+.pot-breakdown-item { background: #121925e8; border: 1px solid #4e5a70; border-radius: 7px; padding: 6px 8px; min-width: 0; }
+.pot-breakdown-amount { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.pot-breakdown-amount strong { color: #f5d080; font-variant-numeric: tabular-nums; }
+.pot-breakdown-eligible, .pot-breakdown-winners { margin-top: 3px; color: #bdc9db; font-size: 10px; overflow-wrap: anywhere; }
+.pot-breakdown-winners { color: #9fdfbb; }
+.pot-breakdown-pending { margin-top: 5px; color: #bfc9d9; font-size: 11px; }

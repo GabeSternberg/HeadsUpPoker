@@ -21,10 +21,18 @@ export interface PlayerInfo {
   folded: boolean;
 }
 
+export interface PotInfo {
+  amount: number;
+  eligiblePlayers: { seat: number; name: string }[];
+  awards: { seat: number; name: string; amount: number }[];
+}
+
 export interface HandInfo {
   communityCards: Card[];
   round: string;
   pot: number;
+  pots: PotInfo[];
+  uncalled: number;
   currentBet: number;
   currentPlayerIndex: number;
   playerBets: number[];

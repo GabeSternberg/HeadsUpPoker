@@ -1,7 +1,7 @@
 /** Independent, server-authoritative tables with private reconnect credentials. */
 import { randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { Server, Socket } from 'socket.io';
-import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
+import { Room, createRoom, startHand, advanceDealer, handleAction, getClientState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
 import { syncAvatarPlayerNames } from './displayNames';
 
 interface Member { id: string; token: string; socketId: string; name: string; seat: number; customName?: string }
@@ -290,6 +290,7 @@ export function setupSocketHandlers(io: Server): void {
       if (t.room.mode === 'virtualcards') return error('Virtual-card tables do not use chips.');
       if (!Number.isInteger(data.seat) || data.seat < 0 || !t.room.players[data.seat] ||
         !(chipsValid(data.chips) || (type === 'set' && data.chips === 0))) return error('Choose a player and a valid whole chip amount (set stack can be zero).');
+      if (t.evicted?.has(data.seat)) return error('That player is being removed; chip changes are unavailable.');
       const pending = t.additions.get(data.seat);
       if (pending && !(pending.type === 'add' && type === 'add')) return error('Cancel the queued chip change before entering another.');
       const amount = data.chips + (pending?.amount ?? 0);
@@ -348,7 +349,7 @@ export function setupSocketHandlers(io: Server): void {
       if (m.seat < 0) return;
       if (t.room.paused) return error('Game is paused.');
       if (!['fold', 'check', 'call', 'raise'].includes(data.type)) return error('Invalid action.');
-      if (data.type === 'raise' && !chipsValid(data.amount)) return error('Enter a valid whole chip amount.');
+      if (data.type === 'raise' && (typeof data.amount !== 'number' || !Number.isSafeInteger(data.amount * 2) || data.amount <= 0)) return error('Enter a valid whole or half chip amount.');
       const result = handleAction(t.room, m.seat, data);
       if (!result.valid) return error(result.error ?? 'Invalid action.');
       broadcast(t);
@@ -359,12 +360,12 @@ export function setupSocketHandlers(io: Server): void {
       if (checkMatchOver(t.room)) { broadcast(t); return; }
       const seats = t.room.players.flatMap((p, i) => p && p.connected && !p.sittingOut && p.stack > 0 ? [i] : []);
       if (seats.length < 2) return error('Need at least two connected players sitting in with chips.');
-      t.room.dealerIndex = seats.find(s => s > t.room.dealerIndex) ?? seats[0];
+      advanceDealer(t.room);
       startHand(t.room); broadcast(t);
     });
     on('togglePause', (_data, t) => {
       if (!hostOnly()) return;
-      if (t.room.paused && inHand(t) && t.room.hand?.participants.some(s => !t.room.players[s]?.connected && !t.evicted?.has(s))) return error('Wait for disconnected players to reconnect before resuming.');
+      if (t.room.paused && inHand(t) && t.room.hand?.participants.some(s => !t.room.hand!.playerFolded[s] && !t.room.hand!.playerAllIn[s] && !t.room.players[s]?.connected && !t.evicted?.has(s))) return error('Wait for disconnected players to reconnect before resuming.');
       t.room.paused = !t.room.paused; broadcast(t);
     });
     on('setSittingOut', (data, t, m) => {
@@ -423,6 +424,7 @@ export function setupSocketHandlers(io: Server): void {
       if (data.password !== '123') return error('Incorrect override password.');
       const target = [...t.members.values()].find(m => m.seat === data.targetIndex);
       if (!target || target.token === t.host) return error('Choose another seated player.');
+      t.additions.delete(target.seat);
       t.members.delete(target.token);
       t.requests = t.requests.filter(r => r.token !== target.token);
       if (inHand(t) && t.room.hand!.participants.includes(target.seat)) {
@@ -462,7 +464,7 @@ export function setupSocketHandlers(io: Server): void {
       if (!table || !member || member.socketId !== socket.id || !table.members.has(member.token)) return;
       if (member.seat >= 0) {
         table.room.players[member.seat]!.connected = false;
-        if (inHand(table) && table.room.hand!.participants.includes(member.seat)) {
+        if (inHand(table) && table.room.hand!.participants.includes(member.seat) && !table.room.hand!.playerFolded[member.seat] && !table.room.hand!.playerAllIn[member.seat]) {
           table.room.paused = true;
           table.room.actionLog.push(`${member.name} disconnected. Host can resume after reconnection.`);
         }

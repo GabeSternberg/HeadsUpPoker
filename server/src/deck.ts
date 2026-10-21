@@ -55,12 +55,10 @@ export class Deck {
     this.shuffle();
   }
 
-  /** Fisher-Yates shuffle using cryptographic randomness. */
+  /** Fisher-Yates shuffle using unbiased cryptographic randomness. */
   private shuffle(): void {
     for (let i = this.cards.length - 1; i > 0; i--) {
-      const bytes = crypto.randomBytes(4);
-      const rand = bytes.readUInt32BE(0);
-      const j = rand % (i + 1);
+      const j = crypto.randomInt(i + 1);
       [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
     }
   }

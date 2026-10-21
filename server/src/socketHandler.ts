@@ -4,12 +4,13 @@ import { Server, Socket } from 'socket.io';
 import { Room, createRoom, startHand, handleAction, getClientState, checkMatchOver, GameMode, vcDeal, vcNextPhase } from './gameState';
 import { syncAvatarPlayerNames } from './displayNames';
 
-interface Member { id: string; token: string; socketId: string; name: string; seat: number }
+interface Member { id: string; token: string; socketId: string; name: string; seat: number; customName?: string }
 interface SeatRequest { token: string; seat: number; chips?: number }
 interface LedgerEntry { id: string; playerId: string; name: string; type: 'buy-in' | 'cash-out'; amount: number; reason: string; timestamp: string }
 interface ChipChange { type: 'add' | 'remove' | 'set'; amount: number }
 interface Table {
   classic?: boolean;
+  seatLimit?: number | null;
   private: boolean; accessKey: string; ledger: LedgerEntry[];
   code: string; room: Room; host: string; members: Map<string, Member>;
   requests: SeatRequest[]; additions: Map<number, ChipChange>; updated: number;
@@ -23,7 +24,13 @@ export function setupSocketHandlers(io: Server): void {
   const classic: Table = { classic: true, private: true, accessKey: '', ledger: [], code: 'CLASSIC', room: createRoom(), host: '', members: new Map(), requests: [], additions: new Map(), updated: Date.now() };
   tables.set(classic.code, classic);
   const inHand = (t: Table) => !!t.room.hand && !t.room.hand.handOver;
-  const capacity = (t: Table) => t.room.mode === 'headsup' ? 2 : 9;
+  const capacity = (t: Table): number | null => t.room.mode === 'headsup' ? 2 : t.seatLimit === undefined ? 9 : t.seatLimit;
+  function growSeats(t: Table) {
+    if (capacity(t) !== null) return;
+    const reserved = new Set(t.requests.map(r => r.seat));
+    if (t.room.players.some((p, i) => !p && !reserved.has(i))) return;
+    t.room.players.push(null); t.room.avatarAssignment.push(null);
+  }
   function directory() {
     io.emit('tables', [...tables.values()].filter(t => !t.private).map(t => ({ code: t.code, mode: t.room.mode,
       host: t.members.get(t.host)?.name ?? 'Host', players: t.room.players.filter(Boolean).length,
@@ -43,7 +50,7 @@ export function setupSocketHandlers(io: Server): void {
     m.seat = index;
     record(t, m, 'buy-in', chips, 'Seat buy-in');
     t.room.players[index] = { id: m.socketId, name: m.name, connected: true, ready: false,
-      stack: chips, holeCards: [], seatIndex: index };
+      stack: chips, holeCards: [], seatIndex: index, customName: m.customName };
   }
   function applyPending(t: Table) {
     if (inHand(t)) return;
@@ -81,7 +88,7 @@ export function setupSocketHandlers(io: Server): void {
   const dealable = (t: Table) => t.room.players.filter(p => p && p.connected && !p.sittingOut && p.stack > 0).length;
   // Players removed mid-hand keep their seat until it ends, folding whenever the action reaches them.
   function foldEvicted(t: Table) {
-    for (let guard = 0; guard < 20 && !t.room.paused && inHand(t) && t.evicted?.has(t.room.hand!.currentPlayerIndex); guard++) {
+    for (let guard = 0; guard < (t.room.hand?.participants.length ?? 0) && !t.room.paused && inHand(t) && t.evicted?.has(t.room.hand!.currentPlayerIndex); guard++) {
       handleAction(t.room, t.room.hand!.currentPlayerIndex, { type: 'fold' });
     }
   }
@@ -89,6 +96,7 @@ export function setupSocketHandlers(io: Server): void {
     t.updated = Date.now();
     foldEvicted(t);
     applyPending(t);
+    growSeats(t);
     for (const m of t.members.values()) {
       const state = getClientState(t.room, m.seat);
       io.to(m.socketId).emit('gameState', { ...state,
@@ -104,6 +112,7 @@ export function setupSocketHandlers(io: Server): void {
         pendingChipChanges: Object.fromEntries(t.additions),
         isPrivate: t.private, accessKey: t.private ? t.accessKey : '',
         ledger: t.room.mode === 'virtualcards' ? [] : t.ledger,
+        hostMembers: (t.classic ? m.seat >= 0 : m.token === t.host) ? [...t.members.values()].map(candidate => ({ id: candidate.id, name: candidate.name, seat: candidate.seat })) : [],
         hostCandidates: m.token === t.host ? [...t.members.values()].filter(candidate => candidate.token !== t.host && io.sockets.sockets.has(candidate.socketId)).map(candidate => ({ id: candidate.id, name: candidate.name })) : [],
       });
     }
@@ -196,13 +205,14 @@ export function setupSocketHandlers(io: Server): void {
       if (tables.size >= 200) return error('Table limit reached. Please join an existing table.');
       const name = typeof data.name === 'string' ? data.name.trim().slice(0, 30) : '';
       if (!name) return error('Enter your name.');
+      if (data.tableSize !== undefined && ![9, 'unlimited'].includes(data.tableSize)) return error('Choose 9 seats or Unlimited.');
       let code: string;
       do { code = randomBytes(3).toString('hex').toUpperCase(); } while (tables.has(code));
       const m: Member = { id: randomUUID(), token: randomBytes(24).toString('hex'), socketId: socket.id, name, seat: -1 };
       const room = createRoom(); room.mode = data.mode as GameMode;
-      room.players = new Array(room.mode === 'headsup' ? 2 : 9).fill(null);
+      room.players = new Array(room.mode === 'headsup' || data.tableSize === 'unlimited' ? 2 : 9).fill(null);
       room.avatarAssignment = new Array(room.players.length).fill(null);
-      const t: Table = { private: data.isPrivate === true, accessKey: randomBytes(16).toString('hex'), ledger: [], code, room, host: m.token, members: new Map([[m.token, m]]), requests: [], additions: new Map(), updated: Date.now() };
+      const t: Table = { seatLimit: data.tableSize === 'unlimited' ? null : 9, private: data.isPrivate === true, accessKey: randomBytes(16).toString('hex'), ledger: [], code, room, host: m.token, members: new Map([[m.token, m]]), requests: [], additions: new Map(), updated: Date.now() };
       seat(t, m, 0, room.settings.startingSum);
       tables.set(code, t); attach(t, m);
     });
@@ -216,7 +226,7 @@ export function setupSocketHandlers(io: Server): void {
       }
       const name = typeof data.name === 'string' ? data.name.trim().slice(0, 30) : '';
       if (!name) return error('Enter your name.');
-      if (t.members.size >= 50) return error('This table has too many viewers.');
+      if (capacity(t) !== null && t.members.size >= 50) return error('This table has too many viewers.');
       const m: Member = { id: randomUUID(), token: randomBytes(24).toString('hex'), socketId: socket.id, name, seat: -1 };
       t.members.set(m.token, m);
       if (t.room.mode !== 'unlimited') {
@@ -234,9 +244,35 @@ export function setupSocketHandlers(io: Server): void {
       if (old && old.id !== socket.id) old.disconnect(true);
       attach(t, m);
     });
+    on('renamePlayer', (data, t) => {
+      if (!hostOnly()) return;
+      const target = [...t.members.values()].find(candidate => candidate.id === data.id);
+      if (!target) return error('Player not found.');
+      if (typeof data.name !== 'string') return error('Enter a name from 1 to 30 characters.');
+      const name = data.name.trim();
+      if (!name || name.length > 30 || /[\u0000-\u001f\u007f]/.test(name)) return error('Enter a name from 1 to 30 characters without control characters.');
+      const previous = target.name;
+      target.name = name; target.customName = name;
+      const player = t.room.players[target.seat];
+      if (player) { player.name = name; player.customName = name; }
+      for (const entry of t.ledger) if (entry.playerId === target.id) entry.name = name;
+      t.room.actionLog.push(`Host renamed "${previous}" to "${name}"`);
+      broadcast(t);
+    });
+    on('setTableSize', (data, t) => {
+      if (!hostOnly()) return;
+      if (t.room.mode === 'headsup' || ![9, 'unlimited'].includes(data.tableSize)) return error('Choose 9 seats or Unlimited for a multi-handed or virtual-card table.');
+      if (data.tableSize === 9 && (t.room.players.slice(9).some(Boolean) || t.requests.some(r => r.seat >= 9) || inHand(t))) return error('Finish the hand and free seats above 9 before reducing the table size.');
+      t.seatLimit = data.tableSize === 'unlimited' ? null : 9;
+      if (t.seatLimit === 9) {
+        t.room.players = t.room.players.slice(0, 9); t.room.avatarAssignment = t.room.avatarAssignment.slice(0, 9);
+        while (t.room.players.length < 9) { t.room.players.push(null); t.room.avatarAssignment.push(null); }
+      }
+      broadcast(t);
+    });
     on('requestSeat', (data, t, m) => {
       const index = data.seat;
-      if (m.seat >= 0 || !Number.isInteger(index) || index < 0 || index >= capacity(t)) return error('Choose an empty seat.');
+      if (m.seat >= 0 || !Number.isInteger(index) || index < 0 || index >= t.room.players.length || (capacity(t) !== null && index >= capacity(t)!)) return error('Choose an empty seat.');
       if (t.room.players[index] || t.requests.some(r => r.seat === index && r.token !== m.token)) return error('That seat is occupied or requested.');
       t.requests = t.requests.filter(r => r.token !== m.token);
       t.requests.push({ token: m.token, seat: index }); broadcast(t);

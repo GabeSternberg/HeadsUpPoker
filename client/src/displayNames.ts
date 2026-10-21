@@ -5,6 +5,7 @@ export function getDisplayName(
   index: number,
   fallback?: string
 ): string {
+  if (gameState.players[index]?.customName) return gameState.players[index]!.customName!;
   if (gameState.avatarMode) {
     const role = gameState.avatarAssignment[index];
     if (role === 'G') return 'Gabe';

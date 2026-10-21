@@ -1,10 +1,11 @@
 interface AvatarNamingContext {
   avatarMode: boolean;
   avatarAssignment: (string | null)[];
-  players: ({ name: string } | null)[];
+  players: ({ name: string; customName?: string } | null)[];
 }
 
 export function getDisplayName(room: AvatarNamingContext, index: number): string {
+  if (room.players[index]?.customName) return room.players[index]!.customName!;
   if (room.avatarMode) {
     const role = room.avatarAssignment[index];
     if (role === 'G') return 'Gabe';

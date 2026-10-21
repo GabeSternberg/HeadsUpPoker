@@ -1,6 +1,6 @@
 # Poker Tables
 
-React/Vite client and an authoritative Node/Socket.IO poker server. Supports concurrent independent heads-up, multi-handed (up to 9 seats), and virtual-card tables.
+React/Vite client and an authoritative Node/Socket.IO poker server. Supports concurrent independent heads-up, multi-handed (9-seat or Unlimited tables), and virtual-card tables.
 
 ## Run locally
 
@@ -31,7 +31,9 @@ For Multiplayer, create a game, share its invite link or six-character code, and
 
 ## Multiplayer table flow
 
-- Create a game in a category; the creator is the host. The category is fixed for that table.
+- Create a game in a category; the creator is the host. The category is fixed for that table. Multi-handed and virtual-card games offer 9-seat and Unlimited table sizes. Hosts can also change the size in Host controls; shrinking to 9 requires freeing higher seats and finishing the active hand.
+- Unlimited tables grow by adding an empty seat as occupied/requested seats fill. There is no fixed seat or member limit for these tables. One 52-card deck deals at most 23 players per hand under the engine's current no-burn dealing rules; larger groups rotate clockwise with the dealer. Undealt players keep their stack and do not post blinds.
+- Hosts can rename anyone, including themselves, viewers, and people awaiting approval, under Host controls → Player names. Names allow 1–30 characters and no control characters. Renames update names on seats, requests, host lists, and ledger labels; player IDs, cards, chips, and reconnect credentials stay the same. Custom names also override avatar labels.
 - Heads-up joiners automatically take an available seat before a hand. Multi-handed joiners watch first and request a specific seat.
 - The host approves/declines seat requests and sets each approved player's buy-in. Players ready up to start with at least two funded players.
 - The host can add chips, remove chips, or set an exact stack (including zero) for any seated player. During a hand, chip changes and seat approvals queue until the hand finishes. Set stack targets the final balance; Remove subtracts from the final balance. Queued changes can be cancelled. A change that would leave the final stack below zero or above 1,000,000 is cancelled and logged. They never alter active-hand stacks or side-pot accounting.

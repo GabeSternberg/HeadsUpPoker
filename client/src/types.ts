@@ -6,6 +6,8 @@ export interface Card {
 }
 
 export interface PlayerInfo {
+  customName?: string;
+  inHand: boolean;
   sittingOut: boolean;
   sitOutNextHand: boolean;
   name: string;
@@ -72,7 +74,7 @@ export interface LastShowdownInfo {
 }
 
 export interface TableSummary {
-  code: string; mode: GameState['mode']; host: string; players: number; capacity: number; started: boolean;
+  code: string; mode: GameState['mode']; host: string; players: number; capacity: number | null; started: boolean;
 }
 
 export interface LedgerEntry {
@@ -87,7 +89,8 @@ export interface GameState {
   tableCode: string;
   isHost: boolean;
   hostName: string;
-  maxSeats: number;
+  maxSeats: number | null;
+  hostMembers: { id: string; name: string; seat: number }[];
   seatRequest: { seat: number; approved: boolean } | null;
   seatRequests: { id: string; seat: number; name: string; approved: boolean }[];
   pendingChips: Record<number, number>;

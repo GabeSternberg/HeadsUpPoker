@@ -8,6 +8,7 @@ export function TableDirectory({ socket, tables, connected }: { socket: Socket |
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get('table') || '');
   const [isPrivate, setIsPrivate] = useState(false);
   const [accessKey, setAccessKey] = useState(() => new URLSearchParams(location.hash.slice(1)).get('key') || '');
+  const [tableSize, setTableSize] = useState<'9' | 'unlimited'>('9');
   const [mode, setMode] = useState<GameState['mode']>('headsup');
   const send = (event: string, data: object) => {
     localStorage.setItem('pokerName', name.trim());
@@ -18,9 +19,10 @@ export function TableDirectory({ socket, tables, connected }: { socket: Socket |
     <label>Your name <input maxLength={30} value={name} onChange={e => setName(e.target.value)} placeholder="Name at the table" /></label>
     <div className="table-controls">
       <select aria-label="Game category" value={mode} onChange={e => setMode(e.target.value as GameState['mode'])}>
-        <option value="headsup">Heads-up · 2 seats</option><option value="unlimited">Multi-handed · 9 seats</option><option value="virtualcards">Virtual cards · 9 seats</option>
+        <option value="headsup">Heads-up · 2 seats</option><option value="unlimited">Multi-handed</option><option value="virtualcards">Virtual cards</option>
       </select>
-      <button className="btn" disabled={!connected || !name.trim()} onClick={() => send('createTable', { mode, isPrivate })}>Create game</button>
+      {mode !== 'headsup' && <label>Table size <select aria-label="Table size" value={tableSize} onChange={e => setTableSize(e.target.value as '9' | 'unlimited')}><option value="9">9 seats</option><option value="unlimited">Unlimited</option></select></label>}
+      <button className="btn" disabled={!connected || !name.trim()} onClick={() => send('createTable', { mode, isPrivate, tableSize: tableSize === '9' ? 9 : 'unlimited' })}>Create game</button>
     </div>
     <label><input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />Private game — hidden from the directory; invite required</label>
     <form className="table-controls" onSubmit={e => { e.preventDefault(); send('joinGame', { code, accessKey }); }}>
@@ -35,7 +37,7 @@ export function TableDirectory({ socket, tables, connected }: { socket: Socket |
     {(['headsup', 'unlimited', 'virtualcards'] as const).map(category => <section key={category}>
       <h4>{label(category)}</h4>
       {tables.filter(t => t.mode === category).map(t => <div className="table-list-row" key={t.code}>
-        <div><strong>{t.host}'s game</strong><br /><small>{t.code} · {t.players}/{t.capacity} seats · {t.started ? 'Playing' : 'Lobby'}</small></div>
+        <div><strong>{t.host}'s game</strong><br /><small>{t.code} · {t.capacity === null ? `${t.players} seated · Unlimited` : `${t.players}/${t.capacity} seats`} · {t.started ? 'Playing' : 'Lobby'}</small></div>
         <button className="btn" disabled={!connected || !name.trim()} onClick={() => send('joinGame', { code: t.code })}>Join / watch</button>
       </div>)}
     </section>)}
@@ -66,6 +68,7 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
       <span>{me.sitOutNextHand ? 'Finish this hand; your seat and chips will be held.' : me.sittingOut ? 'Sitting out — your seat and chips are held.' : ''}</span>
       {state.mode !== 'virtualcards' && <button className="btn" disabled={active} onClick={() => socket?.emit('cashOut')}>Cash out & stand up</button>}
     </div>}
+    {state.maxSeats === null && <p>Unlimited seats · up to 23 players are dealt in each hand. Larger groups rotate clockwise with the dealer.</p>}
     {state.paused && <p>Game paused. If a player disconnected, wait for them to return, then the host can resume.</p>}
     {state.myIndex < 0 && state.mode !== 'unlimited' && <div>
       <h3>Choose a seat</h3>
@@ -131,7 +134,12 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
       </div>
 
       <div className="host-section">
+        <h4>Player names</h4>
+        {state.hostMembers.map(member => <NameEditor key={member.id} member={member} socket={socket} />)}
+      </div>
+      <div className="host-section">
         <h4>Table</h4>
+        {state.mode !== 'headsup' && <label className="host-amount">Table size <select aria-label="Table size" value={state.maxSeats === null ? 'unlimited' : '9'} onChange={e => socket?.emit('setTableSize', { tableSize: e.target.value === 'unlimited' ? 'unlimited' : 9 })}><option value="9">9 seats</option><option value="unlimited">Unlimited</option></select></label>}
         {state.mode === 'unlimited' && <BlindSettings socket={socket} state={state} disabled={active} />}
         <div className="table-controls">
           <label className="host-amount">Transfer host to <select aria-label="Transfer host to" defaultValue="" onChange={e => {
@@ -147,6 +155,18 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
   </section>;
 }
 
+
+function NameEditor({ member, socket }: { member: GameState['hostMembers'][number]; socket: Socket | null }) {
+  const [name, setName] = useState<string | null>(null);
+  return <form className="host-row" onSubmit={e => {
+    e.preventDefault(); socket?.emit('renamePlayer', { id: member.id, name: name ?? member.name }); setName(null);
+  }}>
+    <label className="host-amount">{member.seat >= 0 ? `Seat ${member.seat + 1}` : 'Viewer / waiting'}
+      <input aria-label={`Name for ${member.name}`} value={name ?? member.name} maxLength={30} onChange={e => setName(e.target.value)} />
+    </label>
+    <button className="btn btn-info" disabled={!name?.trim() || name.trim() === member.name}>Save name</button>
+  </form>;
+}
 
 function BlindSettings({ socket, state, disabled }: { socket: Socket | null; state: GameState; disabled: boolean }) {
   const [bigBlind, setBigBlind] = useState(String(state.settings.bigBlind));

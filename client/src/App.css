@@ -2294,3 +2294,5 @@ body:has(.mobile-ui) h1 {
 .heads-up-controls summary { cursor: pointer; padding: 8px 0; font-weight: 700; }
 .heads-up-controls input { margin: 8px; padding: 10px 12px; max-width: 100%; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-sunken); color: var(--text); }
 .heads-up-controls .btn { padding: 10px 16px; }
+.mp-table.large-table .mp-center { top: 135px; }
+.mp-table.large-table .mp-rail, .mp-table.large-table .mp-felt { border-radius: 48px; }

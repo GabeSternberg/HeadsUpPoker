@@ -404,3 +404,101 @@ test('default heads-up singleton supports password seat recovery and isolated re
     await reject(outsider, 'joinGame', { code: 'CLASSIC', name: 'Intruder' });
   } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
 });
+
+test('hosts rename members and unlimited tables grow safely during hands', async () => {
+  const http = createServer(); const server = new Server(http); setupSocketHandlers(server);
+  await new Promise<void>(r => http.listen(0, '127.0.0.1', r));
+  const port = (http.address() as any).port, sockets: any[] = [];
+  async function client() {
+    const s = connect(`http://127.0.0.1:${port}`, { transports: ['websocket'], reconnection: false });
+    sockets.push(s); await event(s, 'connect'); return s;
+  }
+  async function send(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'gameState'); s.emit(command, data); return result;
+  }
+  async function reject(s: any, command: string, data = {}) {
+    await delay(); const result = event(s, 'actionError'); s.emit(command, data); return result;
+  }
+  try {
+    const host = await client(), guest = await client();
+    let state = await send(host, 'createTable', { mode: 'unlimited', name: 'Host', tableSize: 'unlimited' });
+    const code = state.tableCode; assert.equal(state.maxSeats, null);
+    const guestSession = event(guest, 'tableSession');
+    await send(guest, 'joinGame', { code, name: 'Guest' });
+    const saved = await guestSession;
+    state = await send(host, 'renamePlayer', { id: state.hostMembers[0].id, name: 'Captain' });
+    assert.equal(state.hostName, 'Captain');
+    const guestId = state.hostMembers.find((m: any) => m.name === 'Guest').id;
+    await reject(guest, 'renamePlayer', { id: guestId, name: 'Cheater' });
+    await reject(guest, 'setTableSize', { tableSize: 9 });
+    for (const name of ['', '  ', 'a'.repeat(31), 'Bad\nname']) await reject(host, 'renamePlayer', { id: guestId, name });
+    await reject(host, 'renamePlayer', { id: 'missing', name: 'Nobody' });
+    state = await send(host, 'renamePlayer', { id: guestId, name: '  Alex  ' });
+    await send(guest, 'requestSeat', { seat: 1 });
+    state = await send(host, 'approveSeat', { id: '1', chips: 500 });
+    assert.equal(state.players[1].name, 'Alex'); assert.equal(state.ledger.at(-1).name, 'Alex');
+    assert.equal(state.players.length, 3, 'one available seat is added automatically');
+    state = await send(host, 'startGame');
+    assert.equal(state.players[1].inHand, true);
+    const joiners: any[] = [];
+    for (let i = 2; i <= 10; i++) {
+      const s = await client(); joiners.push(s);
+      await send(s, 'joinGame', { code, name: `Guest ${i}` });
+      await send(s, 'requestSeat', { seat: i });
+      state = await send(host, 'approveSeat', { id: String(i), chips: 200 });
+      assert.equal(state.players[i], null, 'new seats remain pending during the hand');
+    }
+    assert.ok(state.players.length > 10);
+    await reject(host, 'requestSeat', { seat: 1000000 });
+    // Growing the room must not create phantom betting participants.
+    await send(host, 'action', { type: 'call' });
+    state = await send(guest, 'action', { type: 'check' }); assert.equal(state.hand.round, 'flop');
+    state = await send(guest, 'action', { type: 'fold' }); assert.equal(state.hand.handOver, true);
+    assert.equal(state.players[10].stack, 200); assert.equal(state.players[10].inHand, false);
+    await reject(host, 'setTableSize', { tableSize: 9 });
+    const stack = state.players[1].stack;
+    state = await send(host, 'renamePlayer', { id: guestId, name: 'New Alex' });
+    assert.equal(state.players[1].stack, stack); assert.equal(state.players[1].name, 'New Alex');
+    assert.equal(state.ledger.find((e: any) => e.playerId === guestId)?.name, 'New Alex');
+    guest.disconnect(); await delay();
+    const resumed = await client(); state = await send(resumed, 'resumeTable', saved);
+    assert.equal(state.players[1].name, 'New Alex');
+    state = await send(host, 'nextHand'); assert.equal(state.players[10].inHand, true);
+    assert.equal(state.players.filter((p: any) => p?.inHand).length, 11);
+    const finite = await client(), finiteGuest = await client();
+    state = await send(finite, 'createTable', { mode: 'unlimited', name: 'Finite' });
+    assert.equal(state.maxSeats, 9); assert.equal(state.players.length, 9);
+    await send(finiteGuest, 'joinGame', { code: state.tableCode, name: 'Limited guest' });
+    await reject(finiteGuest, 'requestSeat', { seat: 9 });
+    state = await send(finite, 'setTableSize', { tableSize: 'unlimited' }); assert.equal(state.maxSeats, null);
+    state = await send(finite, 'setTableSize', { tableSize: 9 }); assert.equal(state.maxSeats, 9);
+  } finally { for (const s of sockets) s.disconnect(); await new Promise<void>(r => server.close(() => r())); }
+});
+
+test('large tables rotate players with one deck and keep undealt chips intact', async () => {
+  const { createRoom, startHand, handleAction, getCurrentLegalActions, vcDeal, vcNextPhase, MAX_PLAYERS_PER_HAND } = await import('../src/gameState');
+  const room = createRoom(); room.mode = 'unlimited';
+  room.players = Array.from({ length: 30 }, (_, seatIndex) => ({ stack: 1000, seatIndex, id: String(seatIndex), name: `Player ${seatIndex}`, connected: true, ready: true, holeCards: [] }));
+  const seen = new Set<number>();
+  for (let dealer = 0; dealer < 30; dealer++) {
+    room.dealerIndex = dealer; startHand(room);
+    assert.equal(room.hand!.participants.length, MAX_PLAYERS_PER_HAND);
+    room.hand!.participants.forEach(s => seen.add(s));
+    const waiting = room.players.filter((_, i) => !room.hand!.participants.includes(i));
+    assert.ok(waiting.every(p => p!.holeCards.length === 0));
+    const waitingStacks = waiting.map(p => p!.stack);
+    while (!room.hand!.handOver) {
+      const actions = getCurrentLegalActions(room)!;
+      assert.equal(handleAction(room, room.hand!.currentPlayerIndex, actions.canCall ? { type: 'call' } : { type: 'check' }).valid, true);
+    }
+    assert.equal(room.hand!.communityCards.length, 5);
+    assert.deepEqual(waiting.map(p => p!.stack), waitingStacks);
+    assert.equal(room.players.reduce((n, p) => n + p!.stack, 0), 30000);
+  }
+  assert.equal(seen.size, 30);
+  room.mode = 'virtualcards'; vcDeal(room); vcNextPhase(room); vcNextPhase(room); vcNextPhase(room);
+  assert.equal(Object.keys(room.vc!.playerCards).length, MAX_PLAYERS_PER_HAND);
+  assert.equal(room.vc!.communityCards.length, 5);
+  const cards = [...Object.values(room.vc!.playerCards).flat(), ...room.vc!.communityCards];
+  assert.equal(new Set(cards.map(c => `${c.rank}-${c.suit}`)).size, cards.length);
+});

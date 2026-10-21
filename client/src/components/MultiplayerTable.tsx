@@ -98,6 +98,8 @@ export default function MultiplayerTable({
 
   const hand = gameState.hand;
   const seatCount = Math.max(gameState.players.length, gameState.maxSeats || 0, 2);
+  const large = seatCount > 9;
+  const tableHeight = large ? 330 + Math.ceil(seatCount / 5) * 190 : TABLE_HEIGHT;
   const anchor = myIndex >= 0 ? myIndex : 0;
   const names = gameState.players.map((player, index) => (player ? getDisplayName(gameState, index) : ''));
   const actions = streetActions(gameState.actionLog, names);
@@ -110,9 +112,9 @@ export default function MultiplayerTable({
         <span>BLIND {smallBlind}/{gameState.settings.bigBlind}</span>
         {myTurn && <span className="mp-your-turn">YOUR TURN</span>}
       </div>
-      <div className="mp-frame" ref={frame} style={{ height: TABLE_HEIGHT * scale }}>
-        <div className="mp-sizer" style={{ width: TABLE_WIDTH * scale, height: TABLE_HEIGHT * scale }}>
-        <div className="mp-table" style={{ transform: `scale(${scale})` }} aria-label="Poker table">
+      <div className="mp-frame" ref={frame} style={{ height: tableHeight * scale }}>
+        <div className="mp-sizer" style={{ width: TABLE_WIDTH * scale, height: tableHeight * scale }}>
+        <div className={`mp-table${large ? ' large-table' : ''}`} style={{ transform: `scale(${scale})`, height: tableHeight }} aria-label="Poker table">
           <div className="mp-rail" />
           <div className="mp-felt" />
 
@@ -143,18 +145,18 @@ export default function MultiplayerTable({
           {Array.from({ length: seatCount }, (_, index) => {
             const player = gameState.players[index] ?? null;
             const visual = (index - anchor + seatCount) % seatCount;
-            const spot = seatPoint(visual, seatCount, 43, 41);
-            const betSpot = seatPoint(visual, seatCount, 25, 19);
+            const spot = large ? { left: 10 + (visual % 5) * 20, top: ((400 + Math.floor(visual / 5) * 190) / tableHeight) * 100 } : seatPoint(visual, seatCount, 43, 41);
+            const betSpot = large ? { left: spot.left, top: spot.top + (60 / tableHeight) * 100 } : seatPoint(visual, seatCount, 25, 19);
             const isMe = index === myIndex;
             // Hole cards hug the nameplate: above it for you and lower seats, below it for upper seats.
-            const cardOffset = isMe ? -84 : spot.top >= 50 ? -58 : 66;
-            const folded = !!player && !!hand?.playerFolded[index];
+            const cardOffset = large ? -65 : isMe ? -84 : spot.top >= 50 ? -58 : 66;
+            const folded = !!player?.inHand && !!hand?.playerFolded[index];
             const allIn = !!player && !!hand?.playerAllIn[index];
             const acting = !!hand && !hand.handOver && hand.currentPlayerIndex === index;
             const bet = hand?.playerBets[index] ?? 0;
             const action = actions.get(index);
             const showFaces = isMe || !!hand?.showdown;
-            const inHand = !!hand && !!player && !player.sittingOut;
+            const inHand = !!hand && !!player?.inHand;
             const myRequest = gameState.seatRequest?.seat === index ? gameState.seatRequest : null;
             const otherRequest = gameState.seatRequests?.find(r => r.seat === index);
             const canSit = !player && myIndex < 0 && !gameState.seatRequest && !otherRequest && !!onSit;
@@ -181,6 +183,7 @@ export default function MultiplayerTable({
                   {player?.isBB && <span className="mp-tag bb">BB</span>}
                   {folded && <span className="mp-tag fold">FOLD</span>}
                   {allIn && <span className="mp-tag allin">ALL IN</span>}
+                  {player && hand && !player.inHand && !player.sittingOut && <span className="mp-tag out">NEXT HAND</span>}
                   {player?.sittingOut && <span className="mp-tag out">OUT</span>}
                   {player && !player.connected && <span className="mp-tag off">AWAY</span>}
                 </div>

@@ -19,12 +19,15 @@ import { appendHandRow, StatsLogData } from './statsLogger';
 import { PendingDecision, flushDecisions } from './classifierLogger';
 import { getDisplayName, mapNamesInText } from './displayNames';
 
+export const MAX_PLAYERS_PER_HAND = 23;
+
 export type Round = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type GameMode = 'headsup' | 'unlimited' | 'virtualcards';
 
 export interface PlayerState {
   id: string;
   name: string;
+  customName?: string;
   ready: boolean;
   connected: boolean;
   stack: number;
@@ -191,7 +194,7 @@ export function createRoom(): Room {
 // --- Virtual Cards mode ---
 
 export function vcDeal(room: Room): void {
-  const seated = room.players
+  let seated = room.players
     .map((p, i) => (p && p.connected && !p.sittingOut) ? i : -1)
     .filter(i => i >= 0);
   if (seated.length === 0) return;
@@ -203,6 +206,8 @@ export function vcDeal(room: Room): void {
     const di = seated.indexOf(room.vcDealerIndex);
     room.vcDealerIndex = seated[(di + 1) % seated.length];
   }
+
+  seated = handSeats(seated, room.vcDealerIndex);
 
   // Heads-up: dealer = SB, other = BB. 3+ players: SB = next after dealer, BB = next after SB.
   const dealerPos = seated.indexOf(room.vcDealerIndex);
@@ -253,6 +258,14 @@ function occupiedSeats(room: Room): number[] {
 /** Get indices of all players with chips > 0 (eligible to play a hand). */
 function activeSeats(room: Room): number[] {
   return room.players.map((p, i) => (p && p.connected && !p.sittingOut && p.stack > 0) ? i : -1).filter(i => i >= 0);
+}
+
+/** Use one deck per hand; rotate the clockwise window with the dealer for larger groups. */
+function handSeats(seats: number[], dealer: number): number[] {
+  if (seats.length <= MAX_PLAYERS_PER_HAND) return seats;
+  let start = seats.findIndex(s => s >= dealer);
+  if (start < 0) start = 0;
+  return [...seats.slice(start), ...seats.slice(0, start)].slice(0, MAX_PLAYERS_PER_HAND).sort((a, b) => a - b);
 }
 
 /** Next occupied seat clockwise from `from` (excluding `from`). */
@@ -369,7 +382,8 @@ function getOpponentStats(room: Room, seat: number) {
 // --- Start a new hand ---
 
 export function startHand(room: Room): void {
-  const seats = activeSeats(room);
+  const eligible = activeSeats(room);
+  const seats = handSeats(eligible, room.dealerIndex);
   if (seats.length < 2) return;
   for (const p of room.players) if (p) p.holeCards = [];
 
@@ -519,11 +533,11 @@ function getBettingState(room: Room): BettingState {
     pot: h.pot,
     currentBet: h.currentBet,
     lastRaiseSize: h.lastRaiseSize,
-    playerBets: [...h.playerBets],
+    playerBets: room.players.map((_, i) => h.playerBets[i] ?? 0),
     playerStacks: room.players.map(p => p ? p.stack : 0),
-    playerActedThisRound: [...h.playerActedThisRound],
-    playerAllIn: [...h.playerAllIn],
-    playerFolded: [...h.playerFolded],
+    playerActedThisRound: room.players.map((_, i) => h.playerActedThisRound[i] ?? true),
+    playerAllIn: room.players.map((_, i) => h.playerAllIn[i] ?? false),
+    playerFolded: room.players.map((_, i) => h.playerFolded[i] ?? true),
     bigBlind: room.settings.bigBlind,
     round: h.round as any,
     numPlayers: room.players.length,
@@ -1126,6 +1140,8 @@ export function getClientState(room: Room, playerIndex: number) {
       if (!p) return null;
       return {
         name: getDisplayName(room, i),
+        customName: p.customName,
+        inHand: room.mode === 'virtualcards' ? !!room.vc?.playerCards[i] : !!room.hand?.participants.includes(i),
         ready: p.ready,
         sittingOut: !!p.sittingOut,
         sitOutNextHand: !!p.sitOutNextHand,

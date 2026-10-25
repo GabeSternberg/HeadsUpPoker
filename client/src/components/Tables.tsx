@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAmountDisplay } from './AmountDisplay';
 import { Socket } from 'socket.io-client';
 import { GameState, TableSummary, LedgerEntry } from '../types';
 
@@ -45,6 +46,7 @@ export function TableDirectory({ socket, tables, connected }: { socket: Socket |
 }
 
 export function TableControls({ socket, state }: { socket: Socket | null; state: GameState }) {
+  const { format } = useAmountDisplay();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const amountInput = (key: string, min = 1) => <input type="number" min={min} max={1000000} aria-label="Chip amount" value={amounts[key] ?? state.settings.startingSum} onChange={e => setAmounts({ ...amounts, [key]: e.target.value })} />;
@@ -95,7 +97,7 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
           </div>
           <div className="host-actions">
             {r.approved ? <span className="host-status">Approved · joins next hand</span> : <>
-              <label className="host-amount">Buy-in {amountInput(`request-${r.id}`)}</label>
+              <label className="host-amount">Buy-in (chips) {amountInput(`request-${r.id}`)}</label>
               <button className="btn btn-good" onClick={() => socket?.emit('approveSeat', { id: r.id, chips: amount(`request-${r.id}`) })}>Approve</button>
             </>}
             <button className="btn btn-bad" onClick={() => socket?.emit('denySeat', { id: r.id })}>Decline</button>
@@ -110,14 +112,14 @@ export function TableControls({ socket, state }: { socket: Socket | null; state:
           <div className="host-who">
             <strong>{p.name}{i === state.myIndex ? ' (you)' : ''}</strong>
             <span>Seat {i + 1}</span>
-            {chipControls && <span className="host-stack">{p.stack.toLocaleString()} chips</span>}
+            {chipControls && <span className="host-stack">Stack: {format(p.stack)}</span>}
             {p.sittingOut && <span className="host-tag">Sitting out</span>}
             {p.sitOutNextHand && <span className="host-tag">Out next hand</span>}
             {!p.connected && <span className="host-tag bad">Away</span>}
           </div>
           <div className="host-actions">
             {chipControls && (state.pendingChipChanges[i] ? <>
-              <span className="host-status">Queued: {state.pendingChipChanges[i].type} {state.pendingChipChanges[i].amount} after this hand</span>
+              <span className="host-status">Queued: {state.pendingChipChanges[i].type} {format(state.pendingChipChanges[i].amount)} after this hand</span>
               <button className="btn" onClick={() => socket?.emit('cancelChipChange', { seat: i })}>Cancel change</button>
             </> : <>
               <label className="host-amount">Chips {amountInput(`player-${i}`, 0)}</label>
@@ -169,16 +171,17 @@ function NameEditor({ member, socket }: { member: GameState['hostMembers'][numbe
 }
 
 function BlindSettings({ socket, state, disabled }: { socket: Socket | null; state: GameState; disabled: boolean }) {
+  const { format } = useAmountDisplay();
   const [bigBlind, setBigBlind] = useState(String(state.settings.bigBlind));
   const [buyIn, setBuyIn] = useState(String(state.settings.startingSum));
   return <form className="table-controls" onSubmit={e => {
     e.preventDefault();
     socket?.emit('updateSettings', { bigBlind: Number(bigBlind), startingSum: Number(buyIn) });
   }}>
-    <label className="host-amount">Big blind <input type="number" min={1} max={1000000} value={bigBlind} disabled={disabled} onChange={e => setBigBlind(e.target.value)} /></label>
-    <label className="host-amount">Default buy-in <input type="number" min={1} max={1000000} value={buyIn} disabled={disabled} onChange={e => setBuyIn(e.target.value)} /></label>
+    <label className="host-amount">Big blind (chips) <input type="number" min={1} max={1000000} value={bigBlind} disabled={disabled} onChange={e => setBigBlind(e.target.value)} /></label>
+    <label className="host-amount">Default buy-in (chips) <input type="number" min={1} max={1000000} value={buyIn} disabled={disabled} onChange={e => setBuyIn(e.target.value)} /></label>
     <button className="btn btn-good" disabled={disabled}>Save for next hand</button>
-    <span className="host-status">Blinds {state.settings.bigBlind / 2}/{state.settings.bigBlind}{disabled ? ' · editable between hands' : ''}</span>
+    <span className="host-status">Blinds {format(state.settings.bigBlind / 2)} / {format(state.settings.bigBlind)}{disabled ? ' · editable between hands' : ''}</span>
   </form>;
 }
 
@@ -190,6 +193,8 @@ function PreviousLedger() {
 }
 
 function Ledger({ entries, code, previous = false }: { entries: LedgerEntry[]; code: string; previous?: boolean }) {
+  const display = useAmountDisplay();
+  const format = (value: number) => previous ? `${value.toLocaleString()} chips` : display.format(value);
   const totals = new Map<string, { name: string; buyIn: number; cashOut: number }>();
   for (const entry of entries) {
     const row = totals.get(entry.playerId) ?? { name: entry.name, buyIn: 0, cashOut: 0 };
@@ -203,14 +208,14 @@ function Ledger({ entries, code, previous = false }: { entries: LedgerEntry[]; c
   };
   return <details className="session-ledger">
     <summary>{previous ? `Previous game ${code}` : 'Session'} buy-in / cash-out ledger</summary>
-    <p>Chip amounts only. Chip changes appear when applied; reductions are recorded as cash-outs. Cashing out returns your full stack and frees your seat.</p>
+    <p>Downloads record chips. Chip changes appear when applied; reductions are recorded as cash-outs. Cashing out returns your full stack and frees your seat.</p>
     <p>This ledger lasts for this server session. Download a copy before the game ends.</p>
     <button className="btn" onClick={download}>Download ledger</button>
     <div className="ledger-scroll"><table><thead><tr><th>Player</th><th>Bought in</th><th>Cashed out</th></tr></thead><tbody>
-      {[...totals].map(([id, row]) => <tr key={id}><td>{row.name}</td><td>{row.buyIn}</td><td>{row.cashOut}</td></tr>)}
+      {[...totals].map(([id, row]) => <tr key={id}><td>{row.name}</td><td>{format(row.buyIn)}</td><td>{format(row.cashOut)}</td></tr>)}
     </tbody></table></div>
-    <div className="ledger-scroll"><table><thead><tr><th>Time</th><th>Player</th><th>Entry</th><th>Chips</th></tr></thead><tbody>
-      {entries.map(entry => <tr key={entry.id}><td>{new Date(entry.timestamp).toLocaleTimeString()}</td><td>{entry.name}</td><td>{entry.type}: {entry.reason}</td><td>{entry.amount}</td></tr>)}
+    <div className="ledger-scroll"><table><thead><tr><th>Time</th><th>Player</th><th>Entry</th><th>Amount</th></tr></thead><tbody>
+      {entries.map(entry => <tr key={entry.id}><td>{new Date(entry.timestamp).toLocaleTimeString()}</td><td>{entry.name}</td><td>{entry.type}: {entry.reason}</td><td>{format(entry.amount)}</td></tr>)}
     </tbody></table></div>
   </details>;
 }

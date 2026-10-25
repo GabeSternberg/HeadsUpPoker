@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAmountDisplay } from './AmountDisplay';
 
 export default function ActionLog({ log, isMobile }: { log: string[]; isMobile?: boolean }) {
+  const { formatText } = useAmountDisplay();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(true);
 
@@ -20,7 +22,7 @@ export default function ActionLog({ log, isMobile }: { log: string[]; isMobile?:
           <div className="log-entries">
             {log.map((entry, i) => (
               <div key={i} className={`log-entry ${entry.startsWith('---') ? 'log-round' : ''}`}>
-                {entry}
+                {formatText(entry)}
               </div>
             ))}
             <div ref={bottomRef} />
@@ -36,7 +38,7 @@ export default function ActionLog({ log, isMobile }: { log: string[]; isMobile?:
       <div className="log-entries">
         {log.map((entry, i) => (
           <div key={i} className={`log-entry ${entry.startsWith('---') ? 'log-round' : ''}`}>
-            {entry}
+            {formatText(entry)}
           </div>
         ))}
         <div ref={bottomRef} />

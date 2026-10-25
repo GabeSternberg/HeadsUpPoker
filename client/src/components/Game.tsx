@@ -7,6 +7,7 @@ import ActionLog from './ActionLog';
 import StatsPanel from './StatsPanel';
 import MultiplayerTable from './MultiplayerTable';
 import PotBreakdown, { displayedPot } from './PotBreakdown';
+import { useAmountDisplay } from './AmountDisplay';
 
 interface GameProps {
   gameState: GameState;
@@ -56,6 +57,7 @@ function PlayerArea({
   gameState: GameState;
   avatarFiles: { L: string[]; G: string[] };
 }) {
+  const { format, unit } = useAmountDisplay();
   const avatar = getAvatarUrl(index, gameState, avatarFiles);
   const isFolded = hand?.playerFolded[index];
   const isCurrentTurn = hand && !hand.handOver && hand.currentPlayerIndex === index;
@@ -91,12 +93,12 @@ function PlayerArea({
         {hand && player.isDealer && <span className="marker dealer-marker">D</span>}
         {hand && player.isSB && <span className="marker sb-marker">SB</span>}
         {hand && player.isBB && <span className="marker bb-marker">BB</span>}
-        <span className="stack">Chips: {player.stack}</span>
+        <span className="stack">{unit === 'chips' ? 'Chips' : 'Stack'}: {format(player.stack)}</span>
         {hand && hand.playerAllIn[index] && <span className="all-in-badge">ALL IN</span>}
         {isFolded && <span className="folded-badge">FOLDED</span>}
       </div>
       {hand && hand.playerBets[index] > 0 && (
-        <div className="bet-badge">Bet: {hand.playerBets[index]}</div>
+        <div className="bet-badge">Bet: {format(hand.playerBets[index])}</div>
       )}
       {(isMe || hand?.showdown) && (
         <div className="cards">
@@ -110,6 +112,7 @@ function PlayerArea({
 }
 
 function LastFoldedPreview({ data, gameState }: { data: { actionLog: string[]; myHoleCards: Card[] }; gameState: GameState }) {
+  const { formatText } = useAmountDisplay();
   const nameMap = buildNameMap(gameState);
   return (
     <div className="last-hand-popup">
@@ -125,7 +128,7 @@ function LastFoldedPreview({ data, gameState }: { data: { actionLog: string[]; m
       <div className="last-fold-log">
         {data.actionLog.map((entry, i) => (
           <div key={i} className={`log-entry ${entry.startsWith('---') ? 'log-round' : ''}`}>
-            {resolveEntry(entry, nameMap)}
+            {formatText(resolveEntry(entry, nameMap))}
           </div>
         ))}
       </div>
@@ -134,6 +137,7 @@ function LastFoldedPreview({ data, gameState }: { data: { actionLog: string[]; m
 }
 
 function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameState: GameState }) {
+  const { formatText } = useAmountDisplay();
   const seatName = (seat: number, fallback: string) => getDisplayName(gameState, seat, fallback);
   const nameMap = buildNameMap(gameState);
   return (
@@ -156,12 +160,13 @@ function LastHandPreview({ data, gameState }: { data: LastShowdownInfo; gameStat
           </div>
         ))}
       </div>
-      <div className="last-hand-result">{resolveEntry(data.resultMessage, nameMap)}</div>
+      <div className="last-hand-result">{formatText(resolveEntry(data.resultMessage, nameMap))}</div>
     </div>
   );
 }
 
 export default function Game({ gameState, myIndex, onAction, onResetMatch, onNextHand, onRebuy, onLeave, onTogglePause, onStartGame, onRequestSeat, avatarFiles, uiMode, onSetUiMode }: GameProps) {
+  const { format, formatText } = useAmountDisplay();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -279,7 +284,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
             <div className="mp-dock">
               <div className="mp-dock-head">
                 <span>Your action</span>
-                <span>Stack <strong>{me.stack.toLocaleString()}</strong></span>
+                <span>Stack <strong>{format(me.stack)}</strong></span>
               </div>
               <ActionPanel
                 legalActions={gameState.legalActions}
@@ -330,7 +335,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
         <div className="board-area">
           {hand && (
             <>
-              <div className="pot">{hand.handOver ? 'Awarded' : 'Pot'}: {displayedPot(hand).toLocaleString()}</div>
+              <div className="pot">{hand.handOver ? 'Awarded' : 'Pot'}: {format(displayedPot(hand))}</div>
               <PotBreakdown hand={hand} />
               <div className="round-label">{hand.round.toUpperCase()}</div>
               <div className="community-cards">
@@ -342,7 +347,7 @@ export default function Game({ gameState, myIndex, onAction, onResetMatch, onNex
           )}
 
           {hand?.handOver && hand.resultMessage && (
-            <div className="result-message">{hand.resultMessage}</div>
+            <div className="result-message">{formatText(hand.resultMessage)}</div>
           )}
 
           {hand?.handOver && !gameState.matchOver && myIndex >= 0 && (

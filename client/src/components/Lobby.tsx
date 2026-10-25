@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { GameState } from '../types';
 import { getDisplayName } from '../displayNames';
+import { useAmountDisplay } from './AmountDisplay';
 
 interface LobbyProps {
   gameState: GameState;
@@ -15,6 +16,7 @@ interface LobbyProps {
 }
 
 export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleReady, onSetAvatar, onSetMode: _onSetMode, onKickPlayer, uiMode, onSetUiMode }: LobbyProps) {
+  const { format, unit } = useAmountDisplay();
   const [startingSum, setStartingSum] = useState(gameState.settings.startingSum);
   const [bigBlind, setBigBlind] = useState(gameState.settings.bigBlind);
 
@@ -71,7 +73,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
                   {player.sittingOut ? 'Sitting out' : player.ready ? 'READY' : 'Not Ready'}
                 </span>
               )}
-              {player && !isVC && <span>{player.stack} chips</span>}
+              {player && !isVC && <span>{format(player.stack)}{unit === 'chips' ? ' chips' : ''}</span>}
               {i === myIndex && <span className="you-tag">(You)</span>}
               {gameState.avatarMode && player && (
                 <div className="avatar-buttons">
@@ -106,7 +108,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
         <fieldset disabled={!gameState.isHost} className="host-settings">
         <h3>Game Settings</h3>
         <div className="setting-row">
-          <label>{gameState.mode === 'unlimited' ? 'Default Buy-in:' : 'Starting Chips:'}</label>
+          <label>{gameState.mode === 'unlimited' ? 'Default Buy-in (chips):' : 'Starting Chips:'}</label>
           <input
             type="number"
             value={startingSum}
@@ -119,7 +121,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
           </div>
         </div>
         <div className="setting-row">
-          <label>Big Blind:</label>
+          <label>Big Blind (chips):</label>
           <input
             type="number"
             value={bigBlind}
@@ -133,7 +135,7 @@ export default function Lobby({ gameState, myIndex, onUpdateSettings, onToggleRe
         </div>
         <div className="setting-row">
           <label>Small Blind:</label>
-          <span className="computed-value">{smallBlind}</span>
+          <span className="computed-value">{format(smallBlind)}</span>
         </div>
         </fieldset>
         <div className="setting-row">

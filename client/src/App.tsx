@@ -6,6 +6,7 @@ import Lobby from './components/Lobby';
 import Game from './components/Game';
 import VirtualCards from './components/VirtualCards';
 import HeadsUpControls from './components/HeadsUpControls';
+import AmountDisplaySettings, { AmountDisplayProvider, AmountPreferencesProvider } from './components/AmountDisplay';
 
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
@@ -210,8 +211,9 @@ function PokerSession({ classic }: { classic: boolean }) {
 
 
   return (
-    <div className="app">
+    <AmountDisplayProvider bigBlind={gameState.settings.bigBlind}><div className="app">
       <h1>{title}</h1>
+      {!isVC && <AmountDisplaySettings />}
       {!connected && <div className="error">Disconnected — reconnecting to your seat…</div>}
       {classic ? <HeadsUpControls socket={socket} state={gameState} resetRequest={resetRequest} /> : <TableControls socket={socket} state={gameState} />}
       {error && <div className="error">{error}</div>}
@@ -288,7 +290,7 @@ function PokerSession({ classic }: { classic: boolean }) {
           onSetUiMode={handleSetUiMode}
         />
       )}
-    </div>
+    </div></AmountDisplayProvider>
   );
 }
 
@@ -297,14 +299,14 @@ function App() {
   const [tab, setTab] = useState<'headsup' | 'multiplayer'>(invited ? 'multiplayer' : 'headsup');
   const [visited, setVisited] = useState({ headsup: !invited, multiplayer: invited });
   const switchTab = (next: 'headsup' | 'multiplayer') => { setTab(next); setVisited(previous => ({ ...previous, [next]: true })); };
-  return <>
+  return <AmountPreferencesProvider>
     <nav className="app-tabs" aria-label="Game tabs">
       <button className={`btn ${tab === 'headsup' ? 'active' : ''}`} aria-pressed={tab === 'headsup'} onClick={() => switchTab('headsup')}>Heads-up</button>
       <button className={`btn ${tab === 'multiplayer' ? 'active' : ''}`} aria-pressed={tab === 'multiplayer'} onClick={() => switchTab('multiplayer')}>Multiplayer</button>
     </nav>
     <div hidden={tab !== 'headsup'}>{visited.headsup && <PokerSession classic />}</div>
     <div hidden={tab !== 'multiplayer'}>{visited.multiplayer && <PokerSession classic={false} />}</div>
-  </>;
+  </AmountPreferencesProvider>;
 }
 
 export default App;

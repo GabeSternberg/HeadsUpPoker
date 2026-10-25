@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { LegalActions } from '../types';
+import { useAmountDisplay } from './AmountDisplay';
+import { toChipAmount } from '../amountDisplay';
 
 interface ActionPanelProps {
   legalActions: LegalActions;
@@ -10,21 +12,24 @@ interface ActionPanelProps {
 }
 
 export default function ActionPanel({ legalActions, onAction, pot, currentBet, isMobile }: ActionPanelProps) {
+  const { format, scale, unitLabel } = useAmountDisplay();
+  const inputForChips = (chips: number) => String(Number((chips * scale).toPrecision(12)));
   const { minRaise, maxRaise } = legalActions;
-  const [keypad, setKeypad] = useState(String(minRaise));
+  const [keypad, setKeypad] = useState(() => inputForChips(minRaise));
 
   useEffect(() => {
-    setKeypad(String(minRaise));
-  }, [minRaise, maxRaise]);
+    setKeypad(inputForChips(minRaise));
+  }, [minRaise, maxRaise, scale]);
 
   const isEmpty = keypad === '';
-  const raiseAmount = Math.max(minRaise, Math.min(maxRaise, Number(keypad) || minRaise));
+  const raiseAmount = Math.max(minRaise, Math.min(maxRaise, toChipAmount(Number(keypad), scale) || minRaise));
 
   function pressDigit(d: string) {
     setKeypad(prev => {
+      if (d === '.') return prev.includes('.') ? prev : (prev || '0') + '.';
       const next = prev === '' || prev === '0' ? d : prev + d;
       const num = Number(next);
-      if (num > maxRaise) return String(maxRaise);
+      if (num > maxRaise * scale) return inputForChips(maxRaise);
       return next;
     });
   }
@@ -35,12 +40,12 @@ export default function ActionPanel({ legalActions, onAction, pot, currentBet, i
 
   function setPreset(val: number) {
     const clamped = Math.max(minRaise, Math.min(maxRaise, Math.floor(val)));
-    setKeypad(String(clamped));
+    setKeypad(inputForChips(clamped));
   }
 
   function adjustBy(delta: number) {
     const next = Math.max(minRaise, Math.min(maxRaise, raiseAmount + delta));
-    setKeypad(String(next));
+    setKeypad(inputForChips(next));
   }
 
   const hasFold = legalActions.canFold && !legalActions.canCheck;
@@ -57,7 +62,7 @@ export default function ActionPanel({ legalActions, onAction, pot, currentBet, i
         )}
         {legalActions.canCall && (
           <button className="btn btn-call btn-trio" onClick={() => onAction('call')}>
-            Call {legalActions.callAmount}
+            Call {format(legalActions.callAmount)}
           </button>
         )}
         {hasFold && (
@@ -67,7 +72,7 @@ export default function ActionPanel({ legalActions, onAction, pot, currentBet, i
         )}
         {legalActions.canRaise && (
           <button className="btn btn-raise btn-trio" onClick={() => onAction('raise', raiseAmount)}>
-            Raise {raiseAmount}{isAllIn ? ' (All In)' : ''}
+            Raise {format(raiseAmount)}{isAllIn ? ' (All In)' : ''}
           </button>
         )}
       </div>
@@ -76,8 +81,8 @@ export default function ActionPanel({ legalActions, onAction, pot, currentBet, i
       {legalActions.canRaise && (
         <div className="raise-controls">
           <div className="raise-presets">
-            <button className="btn btn-preset" onClick={() => adjustBy(-10)}>-10</button>
-            <button className="btn btn-preset" onClick={() => adjustBy(10)}>+10</button>
+            <button className="btn btn-preset" onClick={() => adjustBy(-10)}>-{format(10)}</button>
+            <button className="btn btn-preset" onClick={() => adjustBy(10)}>+{format(10)}</button>
             <button className="btn btn-preset" disabled={currentBet === 0} onClick={() => setPreset(currentBet * 3)}>3x Bet</button>
             <button className="btn btn-preset" disabled={currentBet === 0} onClick={() => setPreset(currentBet * 4)}>4x Bet</button>
             <button className="btn btn-preset" onClick={() => setPreset(Math.floor(pot / 4))}>1/4 Pot</button>
@@ -90,13 +95,14 @@ export default function ActionPanel({ legalActions, onAction, pot, currentBet, i
           {isMobile ? (
             <>
               <div className={`keypad-display${isEmpty ? ' keypad-display-empty' : ''}`}>
-                {isEmpty ? 'EMPTY' : keypad}
+                {isEmpty ? 'EMPTY' : `${keypad} ${unitLabel}`}
               </div>
               <div className="raise-keypad">
                 {['1','2','3','4','5','6','7','8','9'].map(d => (
                   <button key={d} className="btn btn-key" onClick={() => pressDigit(d)}>{d}</button>
                 ))}
                 <button className="btn btn-key" onClick={() => pressDigit('0')}>0</button>
+                <button className="btn btn-key" aria-label="Decimal point" onClick={() => pressDigit('.')}>.</button>
                 <button className="btn btn-key btn-key-del" onClick={pressDelete}>⌫</button>
               </div>
             </>
@@ -104,24 +110,31 @@ export default function ActionPanel({ legalActions, onAction, pot, currentBet, i
             <div className="raise-slider-row">
               <input
                 type="range"
+                aria-label="Raise amount slider"
                 min={minRaise}
                 max={maxRaise}
+                step={0.5}
                 value={raiseAmount}
-                onChange={e => setKeypad(e.target.value)}
+                onChange={e => setKeypad(inputForChips(Number(e.target.value)))}
               />
               <input
                 type="number"
+                aria-label={`Raise amount (${unitLabel})`}
+                min={minRaise * scale}
+                max={maxRaise * scale}
+                step="any"
                 value={keypad}
                 onChange={e => setKeypad(e.target.value)}
                 onBlur={e => {
-                  const val = Number(e.target.value);
+                  const val = toChipAmount(Number(e.target.value), scale);
                   if (!e.target.value || isNaN(val) || val < minRaise) {
-                    setKeypad(String(minRaise));
+                    setKeypad(inputForChips(minRaise));
                   } else if (val > maxRaise) {
-                    setKeypad(String(maxRaise));
-                  }
+                    setKeypad(inputForChips(maxRaise));
+                  } else setKeypad(inputForChips(val));
                 }}
               />
+              <span className="raise-unit">{unitLabel}</span>
               {isAllIn && <span className="all-in-tag">ALL IN</span>}
             </div>
           )}

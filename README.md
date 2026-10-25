@@ -20,6 +20,14 @@ Open http://localhost:5173. The default **Heads-up** tab automatically joins one
 
 ## Default heads-up table
 
+### Amount display
+
+Open **Amount display** above the lobby or table and choose **Chips**, **Big blinds (BB)**, or **Cash (USD)**, then select **Save display**. Cash requires you to enter a positive dollar value for **1 BB**; no cash value is assumed. For example, with a 20-chip big blind and 1 BB worth $2, a 1,000-chip stack displays as 50 BB or $100.00.
+
+The preference is personal, saved in this browser, and shared across the Heads-up and Multiplayer tabs. Stacks, bets, pots, payouts, hand results, action labels, and raise inputs use the selected unit. Raise inputs convert back to whole or half chips and obey the existing betting limits. Changing the table's big blind updates the conversion. Host chip adjustments and blind configuration remain explicitly labeled in chips; ledger downloads and previous-game ledgers retain their original chip amounts.
+
+Run the display conversion tests with `npm test --prefix client`.
+
 - The first two visitors take the available seats before a game starts. Other visitors see recovery controls.
 - Enter password `123` to rejoin as Player 1 or Player 2. In secret/avatar mode the buttons use the assigned Gabe/Liana names.
 - Reclaiming a seat preserves its chips, cards, betting turn, and avatar. The previous connection becomes a viewer and loses action privileges. A seated player cannot switch to the other seat.

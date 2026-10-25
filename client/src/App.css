@@ -42,6 +42,30 @@ h1, h2, h3, h4 {
 
 button, input, select, textarea { font-family: inherit; }
 
+.amount-display-settings {
+  max-width: 850px;
+  margin: 12px auto;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+}
+.amount-display-settings summary { cursor: pointer; font-weight: 600; }
+.amount-display-settings form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.amount-display-settings input, .amount-display-settings select {
+  min-height: 44px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+.amount-display-settings p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.raise-unit { font-size: 0.8rem; white-space: nowrap; }
+
 input, select {
   accent-color: var(--accent);
 }

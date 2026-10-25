@@ -3,6 +3,7 @@ import { Card, GameState } from '../types';
 import { getDisplayName } from '../displayNames';
 import { CardDisplay } from './Card';
 import PotBreakdown, { displayedPot } from './PotBreakdown';
+import { useAmountDisplay } from './AmountDisplay';
 
 type StreetAction = 'check' | 'fold' | 'call' | 'raise' | 'blind';
 
@@ -84,6 +85,7 @@ export default function MultiplayerTable({
   myIndex: number;
   onSit?: (seat: number) => void;
 }) {
+  const { format, formatText } = useAmountDisplay();
   const frame = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
@@ -110,7 +112,7 @@ export default function MultiplayerTable({
   return (
     <div className="mp-layout">
       <div className="mp-meta">
-        <span>BLIND {smallBlind}/{gameState.settings.bigBlind}</span>
+        <span>BLINDS {format(smallBlind)} / {format(gameState.settings.bigBlind)}</span>
         {myTurn && <span className="mp-your-turn">YOUR TURN</span>}
       </div>
       <div className="mp-frame" ref={frame} style={{ height: tableHeight * scale }}>
@@ -120,7 +122,7 @@ export default function MultiplayerTable({
           <div className="mp-felt" />
 
           <div className="mp-center">
-            {hand && <div className="mp-pot"><span className="mp-pot-label">{hand.handOver ? 'AWARDED' : 'TOTAL POT'}</span>{displayedPot(hand).toLocaleString()}</div>}
+            {hand && <div className="mp-pot"><span className="mp-pot-label">{hand.handOver ? 'AWARDED' : 'TOTAL POT'}</span>{format(displayedPot(hand))}</div>}
             {hand && <PotBreakdown hand={hand} />}
             {hand && <div className="mp-street">{hand.round}</div>}
             {hand && hand.communityCards.length > 0 && (
@@ -140,7 +142,7 @@ export default function MultiplayerTable({
               </div>
             )}
             {hand?.handOver && hand.resultMessage && (
-              <div className="mp-result">{hand.resultMessage}</div>
+              <div className="mp-result">{formatText(hand.resultMessage)}</div>
             )}
           </div>
 
@@ -178,7 +180,7 @@ export default function MultiplayerTable({
                   <div className="mp-name">
                     {player ? `${names[index]}${isMe ? ' (You)' : ''}` : emptyLabel}
                   </div>
-                  {player && <div className="mp-stack">{player.stack.toLocaleString()}</div>}
+                  {player && <div className="mp-stack">{format(player.stack)}</div>}
                 </div>
                 <div className="mp-tags">
                   {player?.isSB && <span className="mp-tag sb">SB</span>}
@@ -197,7 +199,7 @@ export default function MultiplayerTable({
                 {player && inHand && !hand?.handOver && !folded && bet > 0 && (
                   <div className="mp-chip" style={{ left: `${betSpot.left}%`, top: `${betSpot.top}%` }}>
                     <span className="mp-chip-icon" aria-hidden="true" />
-                    {bet.toLocaleString()}
+                    {format(bet)}
                   </div>
                 )}
                 {player && inHand && !hand?.handOver && !folded && bet === 0 && action === 'check' && (
